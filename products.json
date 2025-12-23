@@ -1,0 +1,26 @@
+[
+  {
+    "Name": "ESP 32 BOARD",
+    "Price": "60$",
+    "Desc": "remaining stocks",
+    "Stock": "49"
+  },
+  {
+    "Name": "ECB BOARD",
+    "Price": "1250php",
+    "Desc": "remaining stocks",
+    "Stock": "120"
+  },
+  {
+    "Name": "POWER ADAPTER",
+    "Price": "500php",
+    "Desc": "remaining stocks",
+    "Stock": "267"
+  },
+  {
+    "Name": "COINSLOT",
+    "Price": "850PHP",
+    "Desc": "remaining stocks",
+    "Stock": "22"
+  }
+]

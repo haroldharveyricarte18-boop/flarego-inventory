@@ -61,12 +61,14 @@
         .btn-group { display: flex; gap: 10px; }
         .edit-link { color: var(--primary); text-decoration: none; font-weight: 600; font-size: 0.85em; }
         .delete-link { color: var(--danger); text-decoration: none; font-weight: 600; font-size: 0.85em; }
+        
+        .auth-note { text-align: center; font-size: 0.75em; color: #94a3b8; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header-flex">
-            <h1 style="margin: 0;">Flarego Inventory Dashboard</h1>
+            <h1 style="margin: 0;">Flarego Inventory</h1>
             <a href="/export" class="export-btn">Download CSV</a>
         </div>
 
@@ -134,27 +136,29 @@
 
         <div class="card">
             <h3 style="margin-top: 0; border-bottom: 2px solid var(--bg); padding-bottom: 10px;">Live Stock List</h3>
-            {{range $index, $element := .Products}}
+            {{range .Products}}
             <div class="product-item">
                 <div>
                     <div class="product-meta">
-                        <strong style="font-size: 1.1em;">{{$element.Name}}</strong>
-                        <span class="badge {{if le $element.NumericStock 5}}low-stock{{end}}">
-                            {{$element.Stock}} Units
+                        <strong style="font-size: 1.1em;">{{.Name}}</strong>
+                        <span class="badge {{if le .NumericStock 5}}low-stock{{end}}">
+                            {{.Stock}} Units
                         </span>
                     </div>
-                    <p style="margin: 5px 0; color: #64748b; font-size: 0.9em;">{{$element.Desc}}</p>
-                    <div class="price-tag">{{$element.Price}}</div>
+                    <p style="margin: 5px 0; color: #64748b; font-size: 0.9em;">{{.Desc}}</p>
+                    <div class="price-tag">{{.Price}}</div>
                 </div>
                 <div class="btn-group">
-                    <a href="/?edit={{$index}}" class="edit-link">Edit</a>
-                    <a href="/delete?id={{$index}}" class="delete-link" onclick="return confirm('Delete item?')">Delete</a>
+                    <a href="/?edit={{.ID}}" class="edit-link">Edit</a>
+                    <a href="/delete?id={{.ID}}" class="delete-link" onclick="return confirm('Delete item?')">Delete</a>
                 </div>
             </div>
             {{else}}
             <p style="text-align: center; color: #94a3b8; padding: 20px;">No products in database.</p>
             {{end}}
         </div>
+        
+        <p class="auth-note">Secure Session Active • Close browser to log out</p>
     </div>
 
     <script>

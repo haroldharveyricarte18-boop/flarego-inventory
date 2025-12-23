@@ -1,8 +1,8 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -11,40 +11,72 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	_ "github.com/lib/pq" // Required PostgreSQL driver
 )
 
 type Product struct {
+	ID    int
 	Name  string
 	Price string
 	Desc  string
 	Stock string
 }
 
-// NumericStock converts the Stock string to an int for HTML logic checks
 func (p Product) NumericStock() int {
 	val, _ := strconv.Atoi(p.Stock)
 	return val
 }
 
-var products []Product
+var db *sql.DB
 
-func saveData() {
-	data, err := json.MarshalIndent(products, "", "  ")
-	if err != nil {
-		log.Println("Error saving data:", err)
-		return
+// --- DATABASE LOGIC ---
+
+func initDB() {
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	os.WriteFile("products.json", data, 0644)
+
+	var err error
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create table if it doesn't exist
+	query := `
+	CREATE TABLE IF NOT EXISTS products (
+		id SERIAL PRIMARY KEY,
+		name TEXT,
+		price TEXT,
+		description TEXT,
+		stock TEXT
+	);`
+	_, err = db.Exec(query)
+	if err != nil {
+		log.Fatal("Could not create table:", err)
+	}
 }
 
-func loadData() {
-	data, err := os.ReadFile("products.json")
-	if err != nil {
-		products = []Product{}
-		return
+// --- AUTHENTICATION MIDDLEWARE ---
+
+func basicAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		adminUser := os.Getenv("ADMIN_USER")
+		adminPass := os.Getenv("ADMIN_PASS")
+
+		if !ok || user != adminUser || pass != adminPass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
 	}
-	json.Unmarshal(data, &products)
 }
+
+// --- HELPERS ---
 
 func parsePrice(priceStr string) float64 {
 	replacer := strings.NewReplacer("$", "", ",", "", " ", "")
@@ -53,48 +85,61 @@ func parsePrice(priceStr string) float64 {
 	return price
 }
 
-// FIXED MAIN FOR DEPLOYMENT
+// --- MAIN ---
+
 func main() {
-	loadData()
+	initDB()
+	defer db.Close()
 
-	http.HandleFunc("/", homeHandler)
-	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/delete", deleteHandler)
-	http.HandleFunc("/export", exportHandler)
+	// All routes are now protected by basicAuth
+	http.HandleFunc("/", basicAuth(homeHandler))
+	http.HandleFunc("/add", basicAuth(addHandler))
+	http.HandleFunc("/delete", basicAuth(deleteHandler))
+	http.HandleFunc("/export", basicAuth(exportHandler))
 
-	// Step 1 Fix: Get port from environment variable for public hosting
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // Fallback to 8080 for local testing
+		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s", port)
-	// Listen on all interfaces (":PORT") instead of "localhost:PORT"
+	log.Printf("Server secure on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
+
+// --- HANDLERS ---
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFiles("index.html")
 	if err != nil {
-		http.Error(w, "HTML file not found", http.StatusInternalServerError)
+		http.Error(w, "HTML file not found", 500)
 		return
 	}
 
+	// Load from DB
+	rows, err := db.Query("SELECT id, name, price, description, stock FROM products")
+	if err != nil {
+		http.Error(w, "DB Error", 500)
+		return
+	}
+	defer rows.Close()
+
+	var products []Product
+	for rows.Next() {
+		var p Product
+		rows.Scan(&p.ID, &p.Name, &p.Price, &p.Desc, &p.Stock)
+		products = append(products, p)
+	}
+
+	// Search and Sort Logic
 	searchTerm := strings.ToLower(r.URL.Query().Get("search"))
 	sortBy := r.URL.Query().Get("sort")
 	editID := r.URL.Query().Get("edit")
 
 	var displayProducts []Product
-	displayProducts = append([]Product(nil), products...)
-
-	if searchTerm != "" {
-		filtered := []Product{}
-		for _, p := range displayProducts {
-			if strings.Contains(strings.ToLower(p.Name), searchTerm) {
-				filtered = append(filtered, p)
-			}
+	for _, p := range products {
+		if searchTerm == "" || strings.Contains(strings.ToLower(p.Name), searchTerm) {
+			displayProducts = append(displayProducts, p)
 		}
-		displayProducts = filtered
 	}
 
 	if sortBy == "name" {
@@ -109,75 +154,71 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 	var totalValue float64
 	for _, p := range products {
-		price := parsePrice(p.Price)
-		stock, _ := strconv.ParseFloat(p.Stock, 64)
-		totalValue += (price * stock)
+		totalValue += (parsePrice(p.Price) * float64(p.NumericStock()))
 	}
 
 	var editItem *Product
-	editIdx := -1
-	isEditing := false
+	var editIdx int = -1
 	if editID != "" {
-		idx, err := strconv.Atoi(editID)
-		if err == nil && idx >= 0 && idx < len(products) {
-			editItem = &products[idx]
-			editIdx = idx
-			isEditing = true
+		id, _ := strconv.Atoi(editID)
+		for i, p := range products {
+			if p.ID == id {
+				editItem = &products[i]
+				editIdx = id
+				break
+			}
 		}
 	}
 
 	data := map[string]interface{}{
-		"Title":      "Flarego Inventory",
+		"Title":      "Flarego Secure Inventory",
 		"Products":   displayProducts,
-		"Search":     searchTerm,
-		"SortBy":     sortBy,
+		"TotalValue": fmt.Sprintf("%.2f", totalValue),
 		"EditItem":   editItem,
 		"EditIdx":    editIdx,
-		"IsEditing":  isEditing,
-		"TotalValue": fmt.Sprintf("%.2f", totalValue),
+		"IsEditing":  editItem != nil,
 	}
 	tmpl.Execute(w, data)
-}
-
-func exportHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment;filename=inventory_report.csv")
-	writer := csv.NewWriter(w)
-	defer writer.Flush()
-	writer.Write([]string{"Name", "Price", "Stock", "Description"})
-	for _, p := range products {
-		writer.Write([]string{p.Name, p.Price, p.Stock, p.Desc})
-	}
 }
 
 func addHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		idStr := r.FormValue("id")
-		newProd := Product{
-			Name:  r.FormValue("name"),
-			Price: r.FormValue("price"),
-			Desc:  r.FormValue("desc"),
-			Stock: r.FormValue("stock"),
-		}
-		if idStr != "" {
-			id, _ := strconv.Atoi(idStr)
-			if id >= 0 && id < len(products) {
-				products[id] = newProd
-			}
+		name := r.FormValue("name")
+		price := r.FormValue("price")
+		desc := r.FormValue("desc")
+		stock := r.FormValue("stock")
+
+		if idStr != "" && idStr != "-1" {
+			// Update
+			db.Exec("UPDATE products SET name=$1, price=$2, description=$3, stock=$4 WHERE id=$5",
+				name, price, desc, stock, idStr)
 		} else {
-			products = append(products, newProd)
+			// Insert
+			db.Exec("INSERT INTO products (name, price, description, stock) VALUES ($1, $2, $3, $4)",
+				name, price, desc, stock)
 		}
-		saveData()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	idStr := r.URL.Query().Get("id")
-	id, err := strconv.Atoi(idStr)
-	if err == nil && id >= 0 && id < len(products) {
-		products = append(products[:id], products[id+1:]...)
-		saveData()
-	}
+	id := r.URL.Query().Get("id")
+	db.Exec("DELETE FROM products WHERE id=$1", id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func exportHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment;filename=inventory.csv")
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	rows, _ := db.Query("SELECT name, price, stock, description FROM products")
+	writer.Write([]string{"Name", "Price", "Stock", "Description"})
+	for rows.Next() {
+		var name, price, stock, desc string
+		rows.Scan(&name, &price, &stock, &desc)
+		writer.Write([]string{name, price, stock, desc})
+	}
 }

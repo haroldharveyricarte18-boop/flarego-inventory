@@ -14,7 +14,7 @@
             --danger: #ef4444;
             --warning: #f59e0b;
             --dark: #0f172a;
-            --bg: #f1f5f9;
+            --bg: #f8fafc;
             --card-bg: #ffffff;
             --text-main: #1e293b;
             --text-muted: #64748b;
@@ -37,36 +37,35 @@
             margin-bottom: 40px;
         }
 
-        /* Brand Styling with Logo */
+        /* --- EXACT BRAND MATCH --- */
         .brand { 
             display: flex; 
             align-items: center; 
-            gap: 14px; 
+            gap: 16px; 
         }
         
-        .brand h1 { 
-            margin: 0; 
-            font-weight: 800; 
-            letter-spacing: -1px; 
-            font-size: 1.8rem; 
-            color: var(--dark); 
-        }
-        
-        .brand span { color: var(--primary); }
-
         .logo-box {
-            position: relative; 
-            width: 42px; 
-            height: 42px; 
-            background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%); 
-            border-radius: 12px; 
+            width: 54px; 
+            height: 54px; 
+            background: #6366f1; 
+            border-radius: 16px; 
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+            box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
         }
 
-        /* Enhanced Stats Grid */
+        .brand h1 { 
+            margin: 0; 
+            font-weight: 800; 
+            letter-spacing: -1.5px; 
+            font-size: 2.2rem; 
+            color: #0f172a; 
+        }
+        
+        .brand span { color: #6366f1; }
+        /* -------------------------- */
+
         .stats-grid { 
             display: grid; 
             grid-template-columns: 1.2fr 1fr 1fr 1fr; 
@@ -78,8 +77,8 @@
             background: var(--card-bg); 
             padding: 24px; 
             border-radius: 20px; 
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-            border: 1px solid rgba(255,255,255,0.7);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
         }
 
         .stat-card h4 { margin: 0; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -137,7 +136,6 @@
 
         .product-row:hover { 
             background: #f8fafc; 
-            transform: translateX(4px);
             border-left: 4px solid var(--primary);
         }
 
@@ -175,9 +173,9 @@
         <div class="top-bar">
             <div class="brand">
                 <div class="logo-box">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C10.5 5.5 8 7.5 8 11.5C8 14.5 9.79 17 12 17C14.21 17 16 14.5 16 11.5C16 9.5 15 8 13.5 6.5C14.5 8.5 14.5 10.5 13.5 11.5C12.5 12.5 11 12 11 10.5C11 8.5 12 2 12 2Z" fill="white"/>
-                        <path d="M12 21V15M12 15L9 18M12 15L15 18" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M11.53 2C11.53 2 8 5.5 8 11C8 14.5 10.5 17 12 17C13.5 17 16 14.5 16 11C16 7.5 12.47 2 12.47 2C12.47 2 15 5 15 10C15 14 12 16 12 16C12 16 9 14 9 10C9 6 11.53 2 11.53 2Z" fill="white"/>
+                        <path opacity="0.4" d="M12 21C14.2091 21 16 19.2091 16 17C16 15.5 15 14 12 12C9 14 8 15.5 8 17C8 19.2091 9.79086 21 12 21Z" fill="white"/>
                     </svg>
                 </div>
                 <h1>Flare<span>go</span></h1>
@@ -203,11 +201,11 @@
             </div>
             <div class="stat-card">
                 <h4>Valuation</h4>
-                <div class="value">{{.TotalValue}}</div> 
+                <div class="value">₱{{.TotalValue}}</div> 
             </div>
             <div class="stat-card" style="border-bottom: 4px solid var(--success);">
                 <h4>Est. Profit</h4>
-                <div class="value" style="color: var(--success);">{{.TotalProfit}}</div> 
+                <div class="value" style="color: var(--success);">₱{{.TotalProfit}}</div> 
             </div>
         </div>
 
@@ -249,7 +247,7 @@
                 </div>
 
                 <div class="inventory-header">
-                    <h3 style="margin:0">Live Inventory (PHP)</h3>
+                    <h3 style="margin:0">Live Inventory</h3>
                     <form action="/" method="GET">
                         <input type="text" name="search" placeholder="Search products..." value="{{.Search}}" style="width: 250px;">
                     </form>

@@ -78,9 +78,8 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migration check for cost_price and description (safety)
+	// Migration check for cost_price column specifically
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
-	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;")
 }
 
 // --- HELPERS ---
@@ -112,7 +111,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch products ordered by most recently added/updated
 	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
 	if err != nil {
 		http.Error(w, "Database Query Error", 500)
@@ -145,8 +143,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
-	// Activity Logs for the sidebar
-	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 6")
+	// Activity Logs
+	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
 	if logRows != nil {
 		defer logRows.Close()
@@ -214,7 +212,7 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 		if idStr != "" && idStr != "-1" {
 			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6",
 				name, price, cost, desc, stock, idStr)
-			logActivity("Updated", name, "Modified entry details")
+			logActivity("Updated", name, "Modified entry")
 		} else {
 			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)",
 				name, price, cost, desc, stock)
@@ -229,7 +227,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	var name string
 	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
 	db.Exec("DELETE FROM products WHERE id=$1", id)
-	logActivity("Deleted", name, "Product removed from system")
+	logActivity("Deleted", name, "Removed item")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

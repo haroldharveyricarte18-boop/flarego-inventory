@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq" // Required PostgreSQL driver
 )
 
-// Product now includes CostPrice for profit calculations
+// Product includes CostPrice for profit calculations
 type Product struct {
 	ID           int
 	Name         string
@@ -56,41 +56,35 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// 1. Ensure core table exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS products (
-		id SERIAL PRIMARY KEY,
-		name TEXT,
-		price TEXT,
-		description TEXT,
-		stock TEXT
-	);`)
+	// Ensure core tables and columns exist
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS products (
+			id SERIAL PRIMARY KEY,
+			name TEXT,
+			price TEXT,
+			description TEXT,
+			stock TEXT,
+			cost_price NUMERIC(10,2) DEFAULT 0.00
+		);
+		CREATE TABLE IF NOT EXISTS activity_logs (
+			id SERIAL PRIMARY KEY,
+			action TEXT,
+			product_name TEXT,
+			details TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
 	if err != nil {
-		log.Fatal("Table creation error:", err)
+		log.Fatal("Database init error:", err)
 	}
 
-	// 2. Add cost_price column if it doesn't exist
-	_, err = db.Exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;`)
-	if err != nil {
-		log.Println("Migration notice (cost_price):", err)
-	}
-
-	// 3. Ensure activity logs table exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS activity_logs (
-		id SERIAL PRIMARY KEY,
-		action TEXT,
-		product_name TEXT,
-		details TEXT,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);`)
-	if err != nil {
-		log.Println("Migration notice (activity_logs):", err)
-	}
+	// Migration check for cost_price column specifically
+	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 }
 
 // --- HELPERS ---
 
 func parsePrice(priceStr string) float64 {
-	// Updated to strip PHP symbols and Peso signs
 	replacer := strings.NewReplacer("$", "", "₱", "", "PHP", "", ",", "", " ", "")
 	cleanPrice := replacer.Replace(priceStr)
 	price, _ := strconv.ParseFloat(cleanPrice, 64)
@@ -113,13 +107,12 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	funcMap := template.FuncMap{"sub": sub}
 	tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 	if err != nil {
-		http.Error(w, "Template Error", 500)
+		http.Error(w, "Template Error: "+err.Error(), 500)
 		return
 	}
 
-	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products")
+	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
 	if err != nil {
-		log.Printf("Query Error: %v", err)
 		http.Error(w, "Database Query Error", 500)
 		return
 	}
@@ -129,14 +122,18 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	var totalValue float64
 	var totalProfit float64
 	var totalStockItems int
+	var lowStockCount int
 
 	for rows.Next() {
 		var p Product
 		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock); err != nil {
-			log.Printf("Row Scan Error: %v", err)
 			continue
 		}
 		p.NumericStock = p.GetNumericStock()
+
+		if p.NumericStock <= 5 {
+			lowStockCount++
+		}
 
 		sellPrice := parsePrice(p.Price)
 		totalValue += sellPrice * float64(p.NumericStock)
@@ -146,9 +143,10 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
-	logRows, err := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
+	// Activity Logs
+	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
-	if err == nil {
+	if logRows != nil {
 		defer logRows.Close()
 		for logRows.Next() {
 			var l ActivityLog
@@ -157,23 +155,22 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Search logic
 	searchTerm := strings.ToLower(r.URL.Query().Get("search"))
 	var displayProducts []Product
-	var lowStockCount int
 	for _, p := range products {
-		if p.NumericStock <= 5 {
-			lowStockCount++
-		}
 		if searchTerm == "" || strings.Contains(strings.ToLower(p.Name), searchTerm) {
 			displayProducts = append(displayProducts, p)
 		}
 	}
 
+	// Health Calculation
 	healthScore := 100
 	if len(products) > 0 {
 		healthScore = ((len(products) - lowStockCount) * 100) / len(products)
 	}
 
+	// Edit logic
 	editID := r.URL.Query().Get("edit")
 	var editItem *Product
 	var editIdx int = -1
@@ -191,10 +188,9 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Products":        displayProducts,
 		"Logs":            logs,
-		"TotalValue":      fmt.Sprintf("₱%.2f", totalValue),  // Updated to ₱
-		"TotalProfit":     fmt.Sprintf("₱%.2f", totalProfit), // Updated to ₱
+		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
+		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
-		"LowStockCount":   lowStockCount,
 		"HealthScore":     healthScore,
 		"Search":          searchTerm,
 		"EditItem":        editItem,
@@ -216,11 +212,11 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 		if idStr != "" && idStr != "-1" {
 			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6",
 				name, price, cost, desc, stock, idStr)
-			logActivity("Updated", name, "Modified details/stock")
+			logActivity("Updated", name, "Modified entry")
 		} else {
 			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)",
 				name, price, cost, desc, stock)
-			logActivity("Added", name, "Initial stock entry")
+			logActivity("Added", name, "New product created")
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -231,18 +227,18 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	var name string
 	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
 	db.Exec("DELETE FROM products WHERE id=$1", id)
-	logActivity("Deleted", name, "Removed from inventory")
+	logActivity("Deleted", name, "Removed item")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func exportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment;filename=inventory_report.csv")
+	w.Header().Set("Content-Disposition", "attachment;filename=flarego_inventory.csv")
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
 	rows, _ := db.Query("SELECT name, price, cost_price, stock FROM products")
-	writer.Write([]string{"Name", "Selling Price (PHP)", "Cost Price (PHP)", "Stock"})
+	writer.Write([]string{"Name", "Sell Price", "Cost Price", "Stock"})
 	for rows.Next() {
 		var n, p, c, s string
 		rows.Scan(&n, &p, &c, &s)
@@ -274,6 +270,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Enterprise Server active on port %s", port)
+	log.Printf("Flarego ERP V2.5 active on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

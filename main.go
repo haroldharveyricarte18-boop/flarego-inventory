@@ -68,8 +68,7 @@ func initDB() {
 		log.Fatal("Table creation error:", err)
 	}
 
-	// 2. CRITICAL FIX: Add cost_price column to existing table if it doesn't exist
-	// This prevents the "nil pointer" error when querying existing databases
+	// 2. Add cost_price column if it doesn't exist
 	_, err = db.Exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;`)
 	if err != nil {
 		log.Println("Migration notice (cost_price):", err)
@@ -91,7 +90,8 @@ func initDB() {
 // --- HELPERS ---
 
 func parsePrice(priceStr string) float64 {
-	replacer := strings.NewReplacer("$", "", ",", "", " ", "")
+	// Updated to strip PHP symbols and Peso signs
+	replacer := strings.NewReplacer("$", "", "₱", "", "PHP", "", ",", "", " ", "")
 	cleanPrice := replacer.Replace(priceStr)
 	price, _ := strconv.ParseFloat(cleanPrice, 64)
 	return price
@@ -117,7 +117,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch Products with error handling to prevent panic
 	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products")
 	if err != nil {
 		log.Printf("Query Error: %v", err)
@@ -147,7 +146,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
-	// Fetch Recent Activity
 	logRows, err := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
 	if err == nil {
@@ -193,8 +191,8 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Products":        displayProducts,
 		"Logs":            logs,
-		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
-		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
+		"TotalValue":      fmt.Sprintf("₱%.2f", totalValue),  // Updated to ₱
+		"TotalProfit":     fmt.Sprintf("₱%.2f", totalProfit), // Updated to ₱
 		"TotalStockItems": totalStockItems,
 		"LowStockCount":   lowStockCount,
 		"HealthScore":     healthScore,
@@ -244,7 +242,7 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	rows, _ := db.Query("SELECT name, price, cost_price, stock FROM products")
-	writer.Write([]string{"Name", "Selling Price", "Cost Price", "Stock"})
+	writer.Write([]string{"Name", "Selling Price (PHP)", "Cost Price (PHP)", "Stock"})
 	for rows.Next() {
 		var n, p, c, s string
 		rows.Scan(&n, &p, &c, &s)

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flarego Inventory</title>
+    <title>Flarego Inventory | PHP</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -37,8 +37,34 @@
             margin-bottom: 40px;
         }
 
-        .brand h1 { margin: 0; font-weight: 800; letter-spacing: -1px; font-size: 1.8rem; color: var(--dark); }
+        /* Brand Styling with Logo */
+        .brand { 
+            display: flex; 
+            align-items: center; 
+            gap: 14px; 
+        }
+        
+        .brand h1 { 
+            margin: 0; 
+            font-weight: 800; 
+            letter-spacing: -1px; 
+            font-size: 1.8rem; 
+            color: var(--dark); 
+        }
+        
         .brand span { color: var(--primary); }
+
+        .logo-box {
+            position: relative; 
+            width: 42px; 
+            height: 42px; 
+            background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%); 
+            border-radius: 12px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+        }
 
         /* Enhanced Stats Grid */
         .stats-grid { 
@@ -147,7 +173,16 @@
 <body>
     <div class="container">
         <div class="top-bar">
-            <div class="brand"><h1>Flare<span>go</span></h1></div>
+            <div class="brand">
+                <div class="logo-box">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C10.5 5.5 8 7.5 8 11.5C8 14.5 9.79 17 12 17C14.21 17 16 14.5 16 11.5C16 9.5 15 8 13.5 6.5C14.5 8.5 14.5 10.5 13.5 11.5C12.5 12.5 11 12 11 10.5C11 8.5 12 2 12 2Z" fill="white"/>
+                        <path d="M12 21V15M12 15L9 18M12 15L15 18" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <h1>Flare<span>go</span></h1>
+            </div>
+
             <div style="display: flex; gap: 12px;">
                 <a href="/export" class="btn btn-outline">📥 Export CSV</a>
                 <button onclick="toggleForm()" class="btn btn-primary">➕ New Product</button>
@@ -168,11 +203,11 @@
             </div>
             <div class="stat-card">
                 <h4>Valuation</h4>
-                <div class="value">${{.TotalValue}}</div>
+                <div class="value">{{.TotalValue}}</div> 
             </div>
             <div class="stat-card" style="border-bottom: 4px solid var(--success);">
                 <h4>Est. Profit</h4>
-                <div class="value" style="color: var(--success);">${{.TotalProfit}}</div>
+                <div class="value" style="color: var(--success);">{{.TotalProfit}}</div> 
             </div>
         </div>
 
@@ -188,11 +223,11 @@
                                 <input type="text" name="name" value="{{if .EditItem}}{{.EditItem.Name}}{{end}}" required>
                             </div>
                             <div class="input-group">
-                                <label>Price (Sell)</label>
+                                <label>Price (Sell) ₱</label>
                                 <input type="text" name="price" value="{{if .EditItem}}{{.EditItem.Price}}{{end}}" placeholder="0.00" required>
                             </div>
                             <div class="input-group">
-                                <label>Cost (Buy)</label>
+                                <label>Cost (Buy) ₱</label>
                                 <input type="number" step="0.01" name="cost_price" value="{{if .EditItem}}{{.EditItem.CostPrice}}{{end}}" placeholder="0.00" required>
                             </div>
                         </div>
@@ -214,7 +249,7 @@
                 </div>
 
                 <div class="inventory-header">
-                    <h3 style="margin:0">Live Inventory</h3>
+                    <h3 style="margin:0">Live Inventory (PHP)</h3>
                     <form action="/" method="GET">
                         <input type="text" name="search" placeholder="Search products..." value="{{.Search}}" style="width: 250px;">
                     </form>
@@ -231,7 +266,7 @@
                             {{.Stock}} Units
                         </span>
                     </div>
-                    <div style="font-weight: 800;">{{.Price}}</div>
+                    <div style="font-weight: 800;">₱{{.Price}}</div>
                     <div style="text-align: right;">
                         <a href="/?edit={{.ID}}" style="color: var(--primary); margin-right: 10px; text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
                         <a href="/delete?id={{.ID}}" onclick="return confirm('Delete?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>

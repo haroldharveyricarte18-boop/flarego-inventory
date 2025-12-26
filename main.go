@@ -56,30 +56,35 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// Upgraded schema: Added cost_price and activity_logs table
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS products (
-			id SERIAL PRIMARY KEY,
-			name TEXT,
-			price TEXT,
-			cost_price NUMERIC(10,2) DEFAULT 0.00,
-			description TEXT,
-			stock TEXT
-		);`,
-		`CREATE TABLE IF NOT EXISTS activity_logs (
-			id SERIAL PRIMARY KEY,
-			action TEXT,
-			product_name TEXT,
-			details TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
+	// 1. Ensure core table exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS products (
+		id SERIAL PRIMARY KEY,
+		name TEXT,
+		price TEXT,
+		description TEXT,
+		stock TEXT
+	);`)
+	if err != nil {
+		log.Fatal("Table creation error:", err)
 	}
 
-	for _, q := range queries {
-		_, err = db.Exec(q)
-		if err != nil {
-			log.Fatal("Migration Error:", err)
-		}
+	// 2. CRITICAL FIX: Add cost_price column to existing table if it doesn't exist
+	// This prevents the "nil pointer" error when querying existing databases
+	_, err = db.Exec(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;`)
+	if err != nil {
+		log.Println("Migration notice (cost_price):", err)
+	}
+
+	// 3. Ensure activity logs table exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS activity_logs (
+		id SERIAL PRIMARY KEY,
+		action TEXT,
+		product_name TEXT,
+		details TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);`)
+	if err != nil {
+		log.Println("Migration notice (activity_logs):", err)
 	}
 }
 
@@ -93,8 +98,11 @@ func parsePrice(priceStr string) float64 {
 }
 
 func logActivity(action, name, details string) {
-	db.Exec("INSERT INTO activity_logs (action, product_name, details) VALUES ($1, $2, $3)",
+	_, err := db.Exec("INSERT INTO activity_logs (action, product_name, details) VALUES ($1, $2, $3)",
 		action, name, details)
+	if err != nil {
+		log.Printf("Logging error: %v", err)
+	}
 }
 
 func sub(a, b int) int { return a - b }
@@ -109,8 +117,13 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch Products
-	rows, _ := db.Query("SELECT id, name, price, cost_price, description, stock FROM products")
+	// Fetch Products with error handling to prevent panic
+	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products")
+	if err != nil {
+		log.Printf("Query Error: %v", err)
+		http.Error(w, "Database Query Error", 500)
+		return
+	}
 	defer rows.Close()
 
 	var products []Product
@@ -120,7 +133,10 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var p Product
-		rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
+		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock); err != nil {
+			log.Printf("Row Scan Error: %v", err)
+			continue
+		}
 		p.NumericStock = p.GetNumericStock()
 
 		sellPrice := parsePrice(p.Price)
@@ -132,13 +148,15 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch Recent Activity
-	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
-	defer logRows.Close()
+	logRows, err := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
-	for logRows.Next() {
-		var l ActivityLog
-		logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
-		logs = append(logs, l)
+	if err == nil {
+		defer logRows.Close()
+		for logRows.Next() {
+			var l ActivityLog
+			logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
+			logs = append(logs, l)
+		}
 	}
 
 	searchTerm := strings.ToLower(r.URL.Query().Get("search"))

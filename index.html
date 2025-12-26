@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flarego Inventory | PHP</title>
+    <title>Flarego Inventory</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -30,6 +30,7 @@
 
         .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 
+        /* --- PREMIUM BRAND HEADER --- */
         .top-bar {
             display: flex;
             justify-content: space-between;
@@ -37,35 +38,35 @@
             margin-bottom: 40px;
         }
 
-        /* --- EXACT BRAND MATCH --- */
         .brand { 
             display: flex; 
             align-items: center; 
-            gap: 16px; 
+            gap: 18px; 
         }
         
-        .logo-box {
-            width: 54px; 
-            height: 54px; 
-            background: #6366f1; 
-            border-radius: 16px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
+        .logo-container {
+            width: 62px;
+            height: 62px;
+            background: var(--primary);
+            border-radius: 18px; /* Precise squircle radius */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 12px 24px -6px rgba(99, 102, 241, 0.4);
         }
 
-        .brand h1 { 
-            margin: 0; 
-            font-weight: 800; 
-            letter-spacing: -1.5px; 
-            font-size: 2.2rem; 
-            color: #0f172a; 
+        .brand-text {
+            margin: 0;
+            font-weight: 800;
+            font-size: 2.4rem;
+            color: var(--dark);
+            letter-spacing: -1.8px;
+            line-height: 1;
         }
-        
-        .brand span { color: #6366f1; }
-        /* -------------------------- */
 
+        .brand-text span { color: var(--primary); }
+
+        /* --- STATS & CARDS --- */
         .stats-grid { 
             display: grid; 
             grid-template-columns: 1.2fr 1fr 1fr 1fr; 
@@ -90,6 +91,7 @@
             gap: 30px;
         }
 
+        /* --- UI COMPONENTS --- */
         .btn {
             padding: 12px 20px;
             border-radius: 12px;
@@ -151,34 +153,25 @@
         .status-low { background: #fff7ed; color: var(--warning); }
         .status-critical { background: #fef2f2; color: var(--danger); }
 
-        .log-item {
-            padding: 12px 0;
-            border-bottom: 1px solid #f1f5f9;
-            font-size: 0.85rem;
-        }
-
-        .log-action { font-weight: 700; color: var(--primary); font-size: 0.7rem; text-transform: uppercase; }
-
         .form-section { padding: 30px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-        .input-group { margin-bottom: 20px; }
-        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
         input { 
             width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid #cbd5e1; 
             box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
         }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="top-bar">
             <div class="brand">
-                <div class="logo-box">
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M11.53 2C11.53 2 8 5.5 8 11C8 14.5 10.5 17 12 17C13.5 17 16 14.5 16 11C16 7.5 12.47 2 12.47 2C12.47 2 15 5 15 10C15 14 12 16 12 16C12 16 9 14 9 10C9 6 11.53 2 11.53 2Z" fill="white"/>
-                        <path opacity="0.4" d="M12 21C14.2091 21 16 19.2091 16 17C16 15.5 15 14 12 12C9 14 8 15.5 8 17C8 19.2091 9.79086 21 12 21Z" fill="white"/>
+                <div class="logo-container">
+                    <svg width="32" height="32" viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M95.5 10C95.5 10 50 60 50 145C50 215 95 255 110 255C125 255 170 215 170 145C170 75 120 10 120 10C120 10 150 50 150 125C150 185 115 220 115 220C115 220 80 185 80 125C80 65 110 10 110 10" fill="white"/>
+                        <path opacity="0.4" d="M110 280C140 280 165 255 165 220C165 195 150 170 115 140C80 170 65 195 65 220C65 255 80 280 110 280Z" fill="white"/>
                     </svg>
                 </div>
-                <h1>Flare<span>go</span></h1>
+                <h1 class="brand-text">Flare<span>go</span></h1>
             </div>
 
             <div style="display: flex; gap: 12px;">
@@ -229,7 +222,7 @@
                                 <input type="number" step="0.01" name="cost_price" value="{{if .EditItem}}{{.EditItem.CostPrice}}{{end}}" placeholder="0.00" required>
                             </div>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 3fr; gap: 15px;">
+                        <div style="display: grid; grid-template-columns: 1fr 3fr; gap: 15px; margin-top: 15px;">
                             <div class="input-group">
                                 <label>Stock</label>
                                 <input type="number" name="stock" value="{{if .EditItem}}{{.EditItem.Stock}}{{end}}" required>
@@ -239,7 +232,7 @@
                                 <input type="text" name="desc" value="{{if .EditItem}}{{.EditItem.Desc}}{{end}}" required>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 10px;">
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
                             <button type="submit" class="btn btn-primary">Save Changes</button>
                             <a href="/" class="btn btn-outline">Cancel</a>
                         </div>
@@ -278,8 +271,8 @@
             <div class="card" style="padding: 24px;">
                 <h3 style="margin-top: 0; font-size: 1rem;">Recent Activity</h3>
                 {{range .Logs}}
-                <div class="log-item">
-                    <div class="log-action">{{.Action}}</div>
+                <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;">
+                    <div style="font-weight: 700; color: var(--primary); font-size: 0.7rem; text-transform: uppercase;">{{.Action}}</div>
                     <div style="font-weight: 600;">{{.ProductName}}</div>
                     <div style="font-size: 0.7rem; color: var(--text-muted);">{{.CreatedAt.Format "Jan 02, 15:04"}}</div>
                 </div>

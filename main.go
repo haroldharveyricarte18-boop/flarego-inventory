@@ -46,13 +46,13 @@ func initDB() {
 
 	// Create table if it doesn't exist
 	query := `
-	CREATE TABLE IF NOT EXISTS products (
-		id SERIAL PRIMARY KEY,
-		name TEXT,
-		price TEXT,
-		description TEXT,
-		stock TEXT
-	);`
+    CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        price TEXT,
+        description TEXT,
+        stock TEXT
+    );`
 	_, err = db.Exec(query)
 	if err != nil {
 		log.Fatal("Could not create table:", err)
@@ -136,7 +136,15 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	editID := r.URL.Query().Get("edit")
 
 	var displayProducts []Product
+	var lowStockCount int // NEW: Counter for low stock alerts
+
 	for _, p := range products {
+		// Calculate Low Stock (<= 5 units)
+		if p.NumericStock() <= 5 {
+			lowStockCount++
+		}
+
+		// Filter for display
 		if searchTerm == "" || strings.Contains(strings.ToLower(p.Name), searchTerm) {
 			displayProducts = append(displayProducts, p)
 		}
@@ -171,12 +179,14 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"Title":      "Flarego Secure Inventory",
-		"Products":   displayProducts,
-		"TotalValue": fmt.Sprintf("%.2f", totalValue),
-		"EditItem":   editItem,
-		"EditIdx":    editIdx,
-		"IsEditing":  editItem != nil,
+		"Title":         "Flarego Secure Inventory",
+		"Products":      displayProducts,
+		"TotalValue":    fmt.Sprintf("%.2f", totalValue),
+		"LowStockCount": lowStockCount, // NEW: Pass to Professional UI
+		"Search":        searchTerm,    // NEW: Keep search bar filled
+		"EditItem":      editItem,
+		"EditIdx":       editIdx,
+		"IsEditing":     editItem != nil,
 	}
 	tmpl.Execute(w, data)
 }

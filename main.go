@@ -222,6 +222,30 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// --- SELL HANDLER (SALE MODE) ---
+func sellHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		id := r.FormValue("id")
+		var name string
+		var stockStr string
+
+		// Get current stock
+		err := db.QueryRow("SELECT name, stock FROM products WHERE id=$1", id).Scan(&name, &stockStr)
+		stock, _ := strconv.Atoi(stockStr)
+
+		if err == nil && stock > 0 {
+			// Subtract 1
+			newStock := strconv.Itoa(stock - 1)
+			_, err = db.Exec("UPDATE products SET stock=$1 WHERE id=$2", newStock, id)
+
+			if err == nil {
+				logActivity("Sale", name, "Sold 1 unit via POS")
+			}
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	var name string
@@ -263,6 +287,7 @@ func main() {
 	defer db.Close()
 	http.HandleFunc("/", basicAuth(homeHandler))
 	http.HandleFunc("/add", basicAuth(addHandler))
+	http.HandleFunc("/sell", basicAuth(sellHandler)) // Added route for selling
 	http.HandleFunc("/delete", basicAuth(deleteHandler))
 	http.HandleFunc("/export", basicAuth(exportHandler))
 

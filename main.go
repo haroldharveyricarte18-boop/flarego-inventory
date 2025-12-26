@@ -58,27 +58,27 @@ func initDB() {
 
 	// Ensure core tables and columns exist
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS products (
-			id SERIAL PRIMARY KEY,
-			name TEXT,
-			price TEXT,
-			description TEXT,
-			stock TEXT,
-			cost_price NUMERIC(10,2) DEFAULT 0.00
-		);
-		CREATE TABLE IF NOT EXISTS activity_logs (
-			id SERIAL PRIMARY KEY,
-			action TEXT,
-			product_name TEXT,
-			details TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-	`)
+        CREATE TABLE IF NOT EXISTS products (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            price TEXT,
+            description TEXT,
+            stock TEXT,
+            cost_price NUMERIC(10,2) DEFAULT 0.00
+        );
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id SERIAL PRIMARY KEY,
+            action TEXT,
+            product_name TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    `)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migration check for cost_price column specifically
+	// Migration check
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 }
 
@@ -104,7 +104,12 @@ func sub(a, b int) int { return a - b }
 // --- HANDLERS ---
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	funcMap := template.FuncMap{"sub": sub}
+	// Add parsePrice to funcMap so HTML can use it for calculations
+	funcMap := template.FuncMap{
+		"sub":        sub,
+		"parsePrice": parsePrice,
+	}
+
 	tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 	if err != nil {
 		http.Error(w, "Template Error: "+err.Error(), 500)
@@ -143,8 +148,12 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
+	// New: Calculate Total Sales (sum of all 'Sale' actions in logs)
+	var totalSalesCount int
+	db.QueryRow("SELECT COUNT(*) FROM activity_logs WHERE action='Sale'").Scan(&totalSalesCount)
+
 	// Activity Logs
-	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
+	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 8")
 	var logs []ActivityLog
 	if logRows != nil {
 		defer logRows.Close()
@@ -191,6 +200,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
 		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
+		"TotalSales":      totalSalesCount,
 		"HealthScore":     healthScore,
 		"Search":          searchTerm,
 		"EditItem":        editItem,
@@ -198,6 +208,24 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"IsEditing":       editItem != nil,
 	}
 	tmpl.Execute(w, data)
+}
+
+func sellHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		id := r.FormValue("id")
+		var name string
+		var stockStr string
+
+		err := db.QueryRow("SELECT name, stock FROM products WHERE id=$1", id).Scan(&name, &stockStr)
+		stock, _ := strconv.Atoi(stockStr)
+
+		if err == nil && stock > 0 {
+			newStock := strconv.Itoa(stock - 1)
+			db.Exec("UPDATE products SET stock=$1 WHERE id=$2", newStock, id)
+			logActivity("Sale", name, "Sold 1 unit")
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func addHandler(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +291,7 @@ func main() {
 	defer db.Close()
 	http.HandleFunc("/", basicAuth(homeHandler))
 	http.HandleFunc("/add", basicAuth(addHandler))
+	http.HandleFunc("/sell", basicAuth(sellHandler)) // New route
 	http.HandleFunc("/delete", basicAuth(deleteHandler))
 	http.HandleFunc("/export", basicAuth(exportHandler))
 

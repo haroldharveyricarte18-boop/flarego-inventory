@@ -30,6 +30,27 @@
 
         .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 
+        /* --- ALERT BANNER --- */
+        .alert-banner {
+            background: #fef2f2;
+            border: 1px solid #fee2e2;
+            color: var(--danger);
+            padding: 16px 24px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            animation: slideDown 0.4s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         /* --- PREMIUM BRAND HEADER --- */
         .top-bar {
             display: flex;
@@ -48,7 +69,7 @@
             width: 62px;
             height: 62px;
             background: var(--primary);
-            border-radius: 18px; /* Precise squircle radius */
+            border-radius: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -69,21 +90,21 @@
         /* --- STATS & CARDS --- */
         .stats-grid { 
             display: grid; 
-            grid-template-columns: 1.2fr 1fr 1fr 1fr; 
-            gap: 20px; 
+            grid-template-columns: repeat(5, 1fr); 
+            gap: 15px; 
             margin-bottom: 40px; 
         }
 
         .stat-card { 
             background: var(--card-bg); 
-            padding: 24px; 
+            padding: 20px; 
             border-radius: 20px; 
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
             border: 1px solid #e2e8f0;
         }
 
-        .stat-card h4 { margin: 0; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-        .stat-card .value { font-size: 1.5rem; font-weight: 800; margin-top: 8px; color: var(--dark); }
+        .stat-card h4 { margin: 0; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-card .value { font-size: 1.3rem; font-weight: 800; margin-top: 8px; color: var(--dark); }
 
         .main-layout {
             display: grid;
@@ -93,7 +114,7 @@
 
         /* --- UI COMPONENTS --- */
         .btn {
-            padding: 12px 20px;
+            padding: 10px 18px;
             border-radius: 12px;
             font-weight: 600;
             cursor: pointer;
@@ -102,7 +123,7 @@
             display: inline-flex;
             align-items: center;
             border: none;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
         .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39); }
@@ -129,7 +150,7 @@
 
         .product-row {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr 100px;
+            grid-template-columns: 2fr 1fr 1.2fr 1.2fr;
             padding: 20px 24px;
             align-items: center;
             border-bottom: 1px solid #f1f5f9;
@@ -159,10 +180,36 @@
             box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
         }
         label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+
+        .sell-btn {
+            background: #ecfdf5;
+            color: var(--success);
+            border: 1px solid #d1fae5;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 800;
+            font-size: 0.7rem;
+            cursor: pointer;
+            width: 100%;
+            transition: 0.2s;
+        }
+        .sell-btn:hover:not(:disabled) { background: var(--success); color: white; }
+        .sell-btn:disabled { opacity: 0.5; cursor: not-allowed; grayscale: 1; }
     </style>
 </head>
 <body>
     <div class="container">
+        
+        {{$lowStockItems := ""}}
+        {{range .Products}}{{if le .NumericStock 5}}{{$lowStockItems = print $lowStockItems .Name ", "}}{{end}}{{end}}
+        
+        {{if ne $lowStockItems ""}}
+        <div class="alert-banner">
+            <span>⚠️</span>
+            <span>Low Stock Alert: {{ $lowStockItems }} need restocking.</span>
+        </div>
+        {{end}}
+
         <div class="top-bar">
             <div class="brand">
                 <div class="logo-container">
@@ -181,16 +228,20 @@
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card" style="display: flex; align-items: center; gap: 15px;">
-                <div style="width: 60px; height: 60px;"><canvas id="healthChart"></canvas></div>
+            <div class="stat-card" style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 45px; height: 45px;"><canvas id="healthChart"></canvas></div>
                 <div>
                     <h4>Health</h4>
-                    <div class="value">{{.HealthScore}}%</div>
+                    <div class="value" style="font-size: 1.1rem;">{{.HealthScore}}%</div>
                 </div>
             </div>
             <div class="stat-card">
                 <h4>Total Units</h4>
                 <div class="value">{{.TotalStockItems}}</div>
+            </div>
+            <div class="stat-card">
+                <h4>Total Sales</h4>
+                <div class="value" style="color: var(--primary);">{{.TotalSales}}</div>
             </div>
             <div class="stat-card">
                 <h4>Valuation</h4>
@@ -250,17 +301,30 @@
                 <div class="product-row">
                     <div>
                         <div style="font-weight: 700; color: var(--dark);">{{.Name}}</div>
-                        <div style="font-size: 0.8rem; color: var(--text-muted);">{{.Desc}}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">{{.Desc}}</div>
                     </div>
                     <div>
                         <span class="status-badge {{if le .NumericStock 0}}status-critical{{else if le .NumericStock 5}}status-low{{else}}status-ok{{end}}">
                             {{.Stock}} Units
                         </span>
                     </div>
-                    <div style="font-weight: 800;">₱{{.Price}}</div>
+                    <div>
+                        <div style="font-weight: 800; font-size: 1rem;">₱{{.Price}}</div>
+                        <div style="font-size: 0.7rem; font-weight: 700; color: var(--success);">
+                            PROFIT: ₱{{printf "%.2f" (sub (parsePrice .Price) .CostPrice)}}
+                        </div>
+                    </div>
                     <div style="text-align: right;">
-                        <a href="/?edit={{.ID}}" style="color: var(--primary); margin-right: 10px; text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
-                        <a href="/delete?id={{.ID}}" onclick="return confirm('Delete?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>
+                        <form action="/sell" method="POST" style="margin-bottom: 8px;">
+                            <input type="hidden" name="id" value="{{.ID}}">
+                            <button type="submit" class="sell-btn" {{if le .NumericStock 0}}disabled{{end}}>
+                                💰 QUICK SELL
+                            </button>
+                        </form>
+                        <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                            <a href="/?edit={{.ID}}" style="color: var(--primary); text-decoration: none; font-size: 0.75rem; font-weight: 700;">Edit</a>
+                            <a href="/delete?id={{.ID}}" onclick="return confirm('Delete?')" style="color: var(--danger); text-decoration: none; font-size: 0.75rem; font-weight: 700;">Del</a>
+                        </div>
                     </div>
                 </div>
                 {{else}}
@@ -272,7 +336,9 @@
                 <h3 style="margin-top: 0; font-size: 1rem;">Recent Activity</h3>
                 {{range .Logs}}
                 <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;">
-                    <div style="font-weight: 700; color: var(--primary); font-size: 0.7rem; text-transform: uppercase;">{{.Action}}</div>
+                    <div style="font-weight: 700; color: {{if eq .Action "Sale"}}var(--success){{else}}var(--primary){{end}}; font-size: 0.7rem; text-transform: uppercase;">
+                        {{.Action}} {{if eq .Action "Sale"}}💸{{end}}
+                    </div>
                     <div style="font-weight: 600;">{{.ProductName}}</div>
                     <div style="font-size: 0.7rem; color: var(--text-muted);">{{.CreatedAt.Format "Jan 02, 15:04"}}</div>
                 </div>
@@ -283,7 +349,7 @@
         </div>
 
         <p style="text-align:center; font-size: 0.8rem; color: var(--text-muted); margin-top: 40px;">
-            <b>Flarego ERP v2.0</b> • Cloud SQL Connected • Admin Session
+            <b>Flarego ERP v2.5</b> • Cloud SQL Connected • Admin Session
         </p>
     </div>
 
@@ -293,17 +359,33 @@
             f.style.display = f.style.display === 'none' ? 'block' : 'none';
         }
 
+        const healthScore = Number("{{.HealthScore}}");
+        let chartColor = '#6366f1'; 
+
+        if (healthScore < 30) {
+            chartColor = '#ef4444'; 
+        } else if (healthScore < 70) {
+            chartColor = '#f59e0b'; 
+        }
+
         const ctx = document.getElementById('healthChart').getContext('2d');
         new Chart(ctx, {
             type: 'doughnut',
             data: {
                 datasets: [{
-                    data: [Number("{{.HealthScore}}"), Number("{{sub 100 .HealthScore}}")],
-                    backgroundColor: ['#6366f1', '#f1f5f9'],
-                    borderWidth: 0
+                    data: [healthScore, 100 - healthScore],
+                    backgroundColor: [chartColor, '#f1f5f9'],
+                    borderWidth: 0,
+                    borderRadius: 4
                 }]
             },
-            options: { cutout: '70%', plugins: { legend: { display: false } } }
+            options: { 
+                cutout: '75%', 
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                } 
+            }
         });
     </script>
 </body>

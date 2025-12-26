@@ -85,13 +85,17 @@ func parsePrice(priceStr string) float64 {
 	return price
 }
 
+// Helper for template logic (subtraction)
+func sub(a, b int) int {
+	return a - b
+}
+
 // --- MAIN ---
 
 func main() {
 	initDB()
 	defer db.Close()
 
-	// All routes are now protected by basicAuth
 	http.HandleFunc("/", basicAuth(homeHandler))
 	http.HandleFunc("/add", basicAuth(addHandler))
 	http.HandleFunc("/delete", basicAuth(deleteHandler))
@@ -109,13 +113,14 @@ func main() {
 // --- HANDLERS ---
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("index.html")
+	// Add custom functions to templates (like 'sub' for the chart logic)
+	funcMap := template.FuncMap{"sub": sub}
+	tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 	if err != nil {
 		http.Error(w, "HTML file not found", 500)
 		return
 	}
 
-	// Load from DB
 	rows, err := db.Query("SELECT id, name, price, description, stock FROM products")
 	if err != nil {
 		http.Error(w, "DB Error", 500)
@@ -130,21 +135,22 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
-	// Search and Sort Logic
 	searchTerm := strings.ToLower(r.URL.Query().Get("search"))
 	sortBy := r.URL.Query().Get("sort")
 	editID := r.URL.Query().Get("edit")
 
 	var displayProducts []Product
-	var lowStockCount int // NEW: Counter for low stock alerts
+	var lowStockCount int
+	var totalStockItems int // NEW: Sum of all units
 
 	for _, p := range products {
-		// Calculate Low Stock (<= 5 units)
-		if p.NumericStock() <= 5 {
+		stockVal := p.NumericStock()
+		totalStockItems += stockVal
+
+		if stockVal <= 5 {
 			lowStockCount++
 		}
 
-		// Filter for display
 		if searchTerm == "" || strings.Contains(strings.ToLower(p.Name), searchTerm) {
 			displayProducts = append(displayProducts, p)
 		}
@@ -165,6 +171,12 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		totalValue += (parsePrice(p.Price) * float64(p.NumericStock()))
 	}
 
+	// NEW: Calculate Inventory Health Score
+	healthScore := 100
+	if len(products) > 0 {
+		healthScore = ((len(products) - lowStockCount) * 100) / len(products)
+	}
+
 	var editItem *Product
 	var editIdx int = -1
 	if editID != "" {
@@ -179,14 +191,16 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"Title":         "Flarego Secure Inventory",
-		"Products":      displayProducts,
-		"TotalValue":    fmt.Sprintf("%.2f", totalValue),
-		"LowStockCount": lowStockCount, // NEW: Pass to Professional UI
-		"Search":        searchTerm,    // NEW: Keep search bar filled
-		"EditItem":      editItem,
-		"EditIdx":       editIdx,
-		"IsEditing":     editItem != nil,
+		"Title":           "Flarego Elite Inventory",
+		"Products":        displayProducts,
+		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
+		"TotalStockItems": totalStockItems, // Pass total units
+		"LowStockCount":   lowStockCount,
+		"HealthScore":     healthScore, // Pass health percentage
+		"Search":          searchTerm,
+		"EditItem":        editItem,
+		"EditIdx":         editIdx,
+		"IsEditing":       editItem != nil,
 	}
 	tmpl.Execute(w, data)
 }
@@ -200,11 +214,9 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 		stock := r.FormValue("stock")
 
 		if idStr != "" && idStr != "-1" {
-			// Update
 			db.Exec("UPDATE products SET name=$1, price=$2, description=$3, stock=$4 WHERE id=$5",
 				name, price, desc, stock, idStr)
 		} else {
-			// Insert
 			db.Exec("INSERT INTO products (name, price, description, stock) VALUES ($1, $2, $3, $4)",
 				name, price, desc, stock)
 		}

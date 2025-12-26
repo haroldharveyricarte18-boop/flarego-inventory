@@ -143,6 +143,11 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		products = append(products, p)
 	}
 
+	// --- FIX: FETCH SALES MADE TODAY ONLY ---
+	var totalSales int
+	// Uses PostgreSQL's CURRENT_DATE to only count sales since midnight today
+	db.QueryRow("SELECT COUNT(*) FROM activity_logs WHERE action = 'Sale' AND created_at >= CURRENT_DATE").Scan(&totalSales)
+
 	// Activity Logs
 	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
@@ -191,6 +196,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
 		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
+		"TotalSales":      totalSales,
 		"HealthScore":     healthScore,
 		"Search":          searchTerm,
 		"EditItem":        editItem,
@@ -287,7 +293,7 @@ func main() {
 	defer db.Close()
 	http.HandleFunc("/", basicAuth(homeHandler))
 	http.HandleFunc("/add", basicAuth(addHandler))
-	http.HandleFunc("/sell", basicAuth(sellHandler)) // Added route for selling
+	http.HandleFunc("/sell", basicAuth(sellHandler))
 	http.HandleFunc("/delete", basicAuth(deleteHandler))
 	http.HandleFunc("/export", basicAuth(exportHandler))
 
@@ -295,6 +301,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Flarego ERP V2.5 active on port %s", port)
+	log.Printf("Flarego ERP V2.6 active on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

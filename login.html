@@ -187,17 +187,14 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         
-        // Error handling
         if (urlParams.has('error')) {
             document.getElementById('error').style.display = 'block';
         }
 
-        // Registration success handling
         if (urlParams.get('registered') === 'true') {
             document.getElementById('success-reg').style.display = 'block';
         }
 
-        // Password reset success handling
         if (urlParams.get('reset') === 'success') {
             document.getElementById('success-reset').style.display = 'block';
         }

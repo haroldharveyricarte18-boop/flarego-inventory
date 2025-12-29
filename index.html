@@ -46,10 +46,11 @@
         .avatar {
             width: 42px;
             height: 42px;
-            border-radius: 50%;
+            border-radius: 12px; /* Changed to match modern UI style */
             object-fit: cover;
             border: 2px solid white;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            background: #eee;
         }
 
         .user-meta { text-align: right; }
@@ -322,10 +323,11 @@
                         <span class="name">{{.User.DisplayName}}</span>
                         <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
                     </div>
-                    <img src="{{.User.ProfilePic}}" class="avatar" alt="Profile">
+                    <img src="{{.User.ProfilePic}}" class="avatar" alt="Profile" 
+                         onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="/settings">⚙️ Profile Settings</a>
+                        <a href="javascript:void(0)" onclick="toggleSettingsModal()">⚙️ Profile Settings</a>
                         
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
@@ -369,14 +371,18 @@
                 <div id="settings-modal" class="form-section" style="display:none; background: #eff6ff;">
                     <h3 style="margin-top:0">Account Settings</h3>
                     <form action="/update-profile" method="POST" enctype="multipart/form-data">
-                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px;">
+                        <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
+                             <img src="{{.User.ProfilePic}}" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover;" 
+                                  onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
+                             <div>
+                                 <label>Profile Picture</label>
+                                 <input type="file" name="profile_pic_file" accept="image/*">
+                             </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
                             <div class="input-group">
                                 <label>Display Name</label>
                                 <input type="text" name="display_name" value="{{.User.DisplayName}}" required>
-                            </div>
-                            <div class="input-group">
-                                <label>Upload Profile Photo</label>
-                                <input type="file" name="profile_pic_file" accept="image/*">
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; margin-top: 20px;">

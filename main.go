@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64" // Added for persistent image storage
 	"encoding/csv"
 	"fmt"
 	"html/template"
@@ -9,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -69,8 +69,10 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	if _, err := os.Stat("uploads"); os.IsNotExist(err) {
-		os.Mkdir("uploads", 0755)
+	// Set Database Session to local timezone (Philippines Standard Time)
+	_, err = db.Exec("SET TIME ZONE 'Asia/Manila';")
+	if err != nil {
+		log.Println("Warning: Could not set database timezone:", err)
 	}
 
 	_, err = db.Exec(`
@@ -312,7 +314,6 @@ func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// NEW: Export Filtered Audit Logs
 func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
@@ -343,9 +344,23 @@ func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
 		var ts time.Time
 		var u, a, p, d string
 		rows.Scan(&ts, &u, &a, &p, &d)
-		writer.Write([]string{ts.Format("2006-01-02 15:04:05"), u, a, p, d})
+		writer.Write([]string{ts.Local().Format("2006-01-02 15:04:05"), u, a, p, d})
 	}
 	writer.Flush()
+}
+
+func deleteAllAuditHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+	_, err := db.Exec("DELETE FROM activity_logs")
+	if err != nil {
+		http.Error(w, "Failed to clear logs", 500)
+		return
+	}
+	logActivity(r, "System", "Audit Trail", "Admin cleared all activity logs")
+	http.Redirect(w, r, "/audit", http.StatusSeeOther)
 }
 
 func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
@@ -449,19 +464,44 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// FIXED: updateProfileHandler now saves Image as Base64 string directly in DB
 func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie("session_token")
-	r.ParseMultipartForm(5 << 20)
+	r.ParseMultipartForm(5 << 20) // 5MB limit
 	displayName := r.FormValue("display_name")
 
-	file, handler, err := r.FormFile("profile_pic_file")
+	file, _, err := r.FormFile("profile_pic_file")
 	if err == nil {
 		defer file.Close()
-		path := "uploads/" + fmt.Sprintf("%d%s", time.Now().Unix(), filepath.Ext(handler.Filename))
-		dst, _ := os.Create(path)
-		defer dst.Close()
-		io.Copy(dst, file)
-		db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, "/"+path, cookie.Value)
+
+		// Read the file bytes
+		fileBytes, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "Failed to read image", 500)
+			return
+		}
+
+		// Detect MimeType to build the data URI
+		mimeType := http.DetectContentType(fileBytes)
+		var base64Encoding string
+
+		switch mimeType {
+		case "image/jpeg":
+			base64Encoding = "data:image/jpeg;base64,"
+		case "image/png":
+			base64Encoding = "data:image/png;base64,"
+		case "image/gif":
+			base64Encoding = "data:image/gif;base64,"
+		default:
+			http.Error(w, "Invalid image type. Use JPG, PNG or GIF.", 400)
+			return
+		}
+
+		// Append the actual base64 data
+		base64Encoding += base64.StdEncoding.EncodeToString(fileBytes)
+
+		// Save the full Base64 string to the DB (Persistence through deployments!)
+		db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, base64Encoding, cookie.Value)
 	} else {
 		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
 	}
@@ -515,8 +555,7 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
-
+	// Handle standard login/register
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/", checkAuth(homeHandler))
@@ -526,6 +565,7 @@ func main() {
 
 	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
 	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
+	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
 
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
 	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))

@@ -107,9 +107,11 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
+	// Migrations to ensure TEXT type for large Base64 strings
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
+	db.Exec("ALTER TABLE users ALTER COLUMN profile_pic TYPE TEXT;")
 
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
@@ -382,7 +384,6 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	newRole := r.URL.Query().Get("role")
 
-	// AUDIT: Get username before updating for the log
 	var targetUser string
 	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
 
@@ -392,9 +393,7 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// AUDIT: Log Role Change
 	logActivity(r, "User Management", targetUser, "Changed role to "+newRole)
-
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 
@@ -502,26 +501,14 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		mimeType := http.DetectContentType(fileBytes)
-		var base64Encoding string
-		switch mimeType {
-		case "image/jpeg":
-			base64Encoding = "data:image/jpeg;base64,"
-		case "image/png":
-			base64Encoding = "data:image/png;base64,"
-		case "image/gif":
-			base64Encoding = "data:image/gif;base64,"
-		default:
-			http.Error(w, "Invalid image type. Use JPG, PNG or GIF.", 400)
-			return
-		}
+		header := "data:" + mimeType + ";base64,"
+		encoded := base64.StdEncoding.EncodeToString(fileBytes)
+		fullBase64 := header + encoded
 
-		base64Encoding += base64.StdEncoding.EncodeToString(fileBytes)
-		db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, base64Encoding, cookie.Value)
-		// AUDIT: Log Profile Pic Change
+		_, err = db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
 		logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
 	} else {
-		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
-		// AUDIT: Log Name Change
+		_, err = db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
 		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -544,7 +531,6 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_token")
 	if err == nil {
-		// AUDIT: Log Logout
 		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Logout", "Account", "User signed out", cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})

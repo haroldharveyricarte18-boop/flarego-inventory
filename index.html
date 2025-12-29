@@ -323,11 +323,13 @@
                         <span class="name">{{.User.DisplayName}}</span>
                         <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
                     </div>
-                    <img src="{{.User.ProfilePic}}" class="avatar" alt="Profile" 
+                    <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
+                         class="avatar" 
+                         alt="Profile" 
                          onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="/settings" target="_blank">⚙️ Profile Settings</a>
+                        <a href="/settings">⚙️ Profile Settings</a>
                         
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
@@ -479,8 +481,6 @@
             const d = document.getElementById('profileDropdown');
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
         }
-
-        // Cleaned up: Removed toggleSettingsModal as it is no longer used locally
 
         window.onclick = function() {
             const dropdown = document.getElementById('profileDropdown');

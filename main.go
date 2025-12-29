@@ -73,32 +73,32 @@ func initDB() {
 	}
 
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS products (
-			id SERIAL PRIMARY KEY,
-			name TEXT,
-			price TEXT,
-			description TEXT,
-			stock TEXT,
-			cost_price NUMERIC(10,2) DEFAULT 0.00
-		);
-		CREATE TABLE IF NOT EXISTS activity_logs (
-			id SERIAL PRIMARY KEY,
-			action TEXT,
-			product_name TEXT,
-			details TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			username TEXT UNIQUE,
-			password TEXT,
-			display_name TEXT,
-			profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
-			secret_answer TEXT,
-			role TEXT DEFAULT 'staff',
-			theme_preference TEXT DEFAULT 'light'
-		);
-	`)
+        CREATE TABLE IF NOT EXISTS products (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            price TEXT,
+            description TEXT,
+            stock TEXT,
+            cost_price NUMERIC(10,2) DEFAULT 0.00
+        );
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id SERIAL PRIMARY KEY,
+            action TEXT,
+            product_name TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT,
+            display_name TEXT,
+            profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
+            secret_answer TEXT,
+            role TEXT DEFAULT 'staff',
+            theme_preference TEXT DEFAULT 'light'
+        );
+    `)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
@@ -107,8 +107,8 @@ func initDB() {
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
-			 VALUES ('admin', 'admin123', 'System Admin', 'admin') 
-			 ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
+             VALUES ('admin', 'admin123', 'System Admin', 'admin') 
+             ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
 }
 
 // --- UTILITIES ---
@@ -163,6 +163,44 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // --- HANDLERS ---
 
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tmpl, _ := template.ParseFiles("login.html")
+		tmpl.Execute(w, nil)
+		return
+	}
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	var dbPassword string
+	err := db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&dbPassword)
+	if err == nil && password == dbPassword {
+		http.SetCookie(w, &http.Cookie{Name: "session_token", Value: username, Path: "/", HttpOnly: true})
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
+	}
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tmpl, _ := template.ParseFiles("register.html")
+		tmpl.Execute(w, nil)
+		return
+	}
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	displayName := r.FormValue("display_name")
+	secret := strings.ToLower(strings.TrimSpace(r.FormValue("secret")))
+
+	_, err := db.Exec("INSERT INTO users (username, password, display_name, secret_answer) VALUES ($1, $2, $3, $4)",
+		username, password, displayName, secret)
+	if err != nil {
+		http.Error(w, "User already exists", http.StatusConflict)
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
 func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, username, display_name, role, profile_pic FROM users ORDER BY id ASC")
 	if err != nil {
@@ -186,7 +224,6 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	newRole := r.URL.Query().Get("role")
 
-	// Prevent changing the main admin's role
 	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
 	if err != nil {
 		http.Error(w, "Update failed", 500)
@@ -218,6 +255,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	var products []Product
 	var totalValue, totalProfit float64
 	var totalStockItems int
+	var lowStockCount int
 
 	for rows.Next() {
 		var p Product
@@ -227,7 +265,15 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		totalValue += sellPrice * float64(p.NumericStock)
 		totalProfit += (sellPrice - p.CostPrice) * float64(p.NumericStock)
 		totalStockItems += p.NumericStock
+		if p.NumericStock <= 5 {
+			lowStockCount++
+		}
 		products = append(products, p)
+	}
+
+	healthScore := 100
+	if len(products) > 0 {
+		healthScore = 100 - (lowStockCount * 100 / len(products))
 	}
 
 	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
@@ -248,6 +294,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
 		"TotalSales":      countSalesToday(),
+		"HealthScore":     healthScore,
 		"EditItem":        editItem,
 		"IsEditing":       editItem != nil,
 	}
@@ -290,7 +337,7 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
 	}
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func sellHandler(w http.ResponseWriter, r *http.Request) {
@@ -307,11 +354,30 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func loginHandler_Full(w http.ResponseWriter, r *http.Request) {
-	// ... logic same as your previous loginHandler ...
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// ... include your other handlers (logout, register, reset, delete, export, settings) ...
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	db.Exec("DELETE FROM products WHERE id=$1", id)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func exportHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment;filename=inventory.csv")
+	writer := csv.NewWriter(w)
+	rows, _ := db.Query("SELECT name, price, stock FROM products")
+	writer.Write([]string{"Name", "Price", "Stock"})
+	for rows.Next() {
+		var n, p, s string
+		rows.Scan(&n, &p, &s)
+		writer.Write([]string{n, p, s})
+	}
+	writer.Flush()
+}
 
 func main() {
 	initDB()
@@ -349,29 +415,4 @@ func main() {
 	}
 	log.Printf("Flarego ERP active on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
-}
-
-func logoutHandler(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	db.Exec("DELETE FROM products WHERE id=$1", id)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func exportHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment;filename=inventory.csv")
-	writer := csv.NewWriter(w)
-	rows, _ := db.Query("SELECT name, price, stock FROM products")
-	writer.Write([]string{"Name", "Price", "Stock"})
-	for rows.Next() {
-		var n, p, s string
-		rows.Scan(&n, &p, &s)
-		writer.Write([]string{n, p, s})
-	}
-	writer.Flush()
 }

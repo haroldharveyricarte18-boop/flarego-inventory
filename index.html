@@ -267,6 +267,12 @@
             box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
         }
         label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+
+        /* Custom style for file input */
+        input[type="file"] {
+            padding: 8px;
+            background: white;
+        }
     </style>
 </head>
 <body>
@@ -308,7 +314,7 @@
                     <img src="{{.User.ProfilePic}}" class="avatar" alt="Profile">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="/settings">⚙️ Profile Settings</a>
+                        <a href="/settings" target="_blank">⚙️ Profile Settings</a>
                         
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
@@ -348,6 +354,26 @@
 
         <div class="main-layout">
             <div class="card">
+                <div id="settings-modal" class="form-section" style="display:none; background: #eff6ff;">
+                    <h3 style="margin-top:0">Account Settings</h3>
+                    <form action="/update-profile" method="POST" enctype="multipart/form-data">
+                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px;">
+                            <div class="input-group">
+                                <label>Display Name</label>
+                                <input type="text" name="display_name" value="{{.User.DisplayName}}" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Upload Profile Photo</label>
+                                <input type="file" name="profile_pic_file" accept="image/*">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn btn-primary">Update Profile</button>
+                            <button type="button" onclick="toggleSettingsModal()" class="btn btn-outline">Close</button>
+                        </div>
+                    </form>
+                </div>
+
                 {{ if eq .User.Role "admin" }}
                 <div id="form-content" class="form-section" style="display: {{if .IsEditing}}block{{else}}none{{end}};">
                     <h3 style="margin-top:0">{{if .EditItem}}Edit Product: {{.EditItem.Name}}{{else}}Add New Product{{end}}</h3>
@@ -451,6 +477,11 @@
             e.stopPropagation();
             const d = document.getElementById('profileDropdown');
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function toggleSettingsModal() {
+            const m = document.getElementById('settings-modal');
+            m.style.display = m.style.display === 'none' ? 'block' : 'none';
         }
 
         window.onclick = function() {

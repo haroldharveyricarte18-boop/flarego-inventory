@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password | Flarego ERP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --dark: #0f172a;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 0;
+            background: radial-gradient(circle at top right, #eef2ff, #f8fafc);
+            height: 100vh;
+            display: flex;
+            align-items: center; justify-content: center;
+        }
+
+        .login-card {
+            background: white; padding: 40px; border-radius: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+            width: 100%; max-width: 400px; border: 1px solid rgba(226, 232, 240, 0.8);
+            text-align: center;
+        }
+
+        h1 { font-weight: 800; font-size: 1.8rem; margin-bottom: 8px; letter-spacing: -1px; }
+        p { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 32px; }
+
+        .form-group { text-align: left; margin-bottom: 16px; }
+        label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 6px; color: var(--dark); }
+
+        input {
+            width: 100%; padding: 12px 16px; border-radius: 12px;
+            border: 2px solid #f1f5f9; background: #f8fafc;
+            box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
+        }
+
+        .btn-reset {
+            width: 100%; padding: 14px; background: var(--primary); color: white;
+            border: none; border-radius: 14px; font-weight: 700; cursor: pointer;
+            margin-top: 10px; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+        }
+
+        .error-msg {
+            background: #fef2f2; color: #ef4444; padding: 12px; border-radius: 10px;
+            font-size: 0.85rem; font-weight: 600; margin-bottom: 20px; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>Reset Password</h1>
+        <p>Recover your account access.</p>
+
+        <div id="error" class="error-msg">Incorrect username or secret word.</div>
+
+        <form action="/reset" method="POST">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" required>
+            </div>
+            <div class="form-group">
+                <label>Your Secret Word</label>
+                <input type="text" name="secret" required>
+            </div>
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" name="new_password" required>
+            </div>
+            <button type="submit" class="btn-reset">Update Password</button>
+        </form>
+
+        <div style="margin-top: 24px; font-size: 0.85rem;">
+            <a href="/login" style="text-decoration: none; color: var(--text-muted);">Back to Login</a>
+        </div>
+    </div>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('error')) {
+            document.getElementById('error').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

@@ -22,6 +22,7 @@ type User struct {
 	DisplayName     string
 	ProfilePic      string
 	ThemePreference string
+	SecretAnswer    string
 }
 
 // Product includes CostPrice for profit calculations
@@ -66,40 +67,43 @@ func initDB() {
 	}
 
 	_, err = db.Exec(`
-        CREATE TABLE IF NOT EXISTS products (
-            id SERIAL PRIMARY KEY,
-            name TEXT,
-            price TEXT,
-            description TEXT,
-            stock TEXT,
-            cost_price NUMERIC(10,2) DEFAULT 0.00
-        );
-        CREATE TABLE IF NOT EXISTS activity_logs (
-            id SERIAL PRIMARY KEY,
-            action TEXT,
-            product_name TEXT,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT,
-            display_name TEXT,
-            profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff',
-            theme_preference TEXT DEFAULT 'light'
-        );
-    `)
+		CREATE TABLE IF NOT EXISTS products (
+			id SERIAL PRIMARY KEY,
+			name TEXT,
+			price TEXT,
+			description TEXT,
+			stock TEXT,
+			cost_price NUMERIC(10,2) DEFAULT 0.00
+		);
+		CREATE TABLE IF NOT EXISTS activity_logs (
+			id SERIAL PRIMARY KEY,
+			action TEXT,
+			product_name TEXT,
+			details TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS users (
+			id SERIAL PRIMARY KEY,
+			username TEXT UNIQUE,
+			password TEXT,
+			display_name TEXT,
+			profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff',
+			secret_answer TEXT,
+			theme_preference TEXT DEFAULT 'light'
+		);
+	`)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Seed default user (Username: admin | Password: admin123)
-	db.Exec(`INSERT INTO users (username, password, display_name) 
-             VALUES ('admin', 'admin123', 'System Admin') 
-             ON CONFLICT (username) DO NOTHING`)
-
+	// Migrations: Add columns if they don't exist
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
+	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS secret_answer TEXT;")
+
+	// Seed default user (Username: admin | Password: admin123)
+	db.Exec(`INSERT INTO users (username, password, display_name, secret_answer) 
+			 VALUES ('admin', 'admin123', 'System Admin', 'flarego') 
+			 ON CONFLICT (username) DO NOTHING`)
 }
 
 // --- AUTH MIDDLEWARE ---
@@ -115,7 +119,7 @@ func checkAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// --- HANDLERS ---
+// --- AUTH HANDLERS ---
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
@@ -139,8 +143,51 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
-		// Simple error handling: redirect back to login
 		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
+	}
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tmpl, _ := template.ParseFiles("register.html")
+		tmpl.Execute(w, nil)
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	displayName := r.FormValue("display_name")
+	secret := strings.ToLower(strings.TrimSpace(r.FormValue("secret")))
+
+	_, err := db.Exec("INSERT INTO users (username, password, display_name, secret_answer) VALUES ($1, $2, $3, $4)",
+		username, password, displayName, secret)
+
+	if err != nil {
+		http.Redirect(w, r, "/register?error=exists", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/login?registered=true", http.StatusSeeOther)
+}
+
+func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tmpl, _ := template.ParseFiles("reset.html")
+		tmpl.Execute(w, nil)
+		return
+	}
+
+	username := r.FormValue("username")
+	secret := strings.ToLower(strings.TrimSpace(r.FormValue("secret")))
+	newPassword := r.FormValue("new_password")
+
+	var dbSecret string
+	err := db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbSecret)
+
+	if err == nil && secret == dbSecret {
+		db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPassword, username)
+		http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/reset?error=invalid", http.StatusSeeOther)
 	}
 }
 
@@ -153,6 +200,8 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
+
+// --- MAIN HANDLERS ---
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	funcMap := template.FuncMap{"sub": sub}
@@ -277,6 +326,8 @@ func main() {
 
 	// Public Routes
 	http.HandleFunc("/login", loginHandler)
+	http.HandleFunc("/register", registerHandler)
+	http.HandleFunc("/reset", resetPasswordHandler)
 
 	// Protected Routes (require login)
 	http.HandleFunc("/", checkAuth(homeHandler))
@@ -291,6 +342,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Flarego ERP V2.8 active on port %s", port)
+	log.Printf("Flarego ERP V2.9 active on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

@@ -9,6 +9,7 @@
         :root {
             --primary: #6366f1;
             --primary-hover: #4f46e5;
+            --success: #10b981;
             --dark: #0f172a;
             --bg: #f8fafc;
             --text-main: #1e293b;
@@ -116,9 +117,7 @@
             box-shadow: 0 12px 20px -3px rgba(99, 102, 241, 0.4);
         }
 
-        .error-msg {
-            background: #fef2f2;
-            color: #ef4444;
+        .alert-msg {
             padding: 12px;
             border-radius: 10px;
             font-size: 0.85rem;
@@ -126,6 +125,26 @@
             margin-bottom: 20px;
             display: none;
         }
+
+        .error-msg { background: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; }
+        .success-msg { background: #ecfdf5; color: #10b981; border: 1px solid #d1fae5; }
+
+        .auth-footer {
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+
+        .auth-link {
+            text-decoration: none;
+            color: var(--text-muted);
+            transition: color 0.2s;
+        }
+
+        .auth-link:hover { color: var(--primary); }
+        .auth-link.bold { font-weight: 700; color: var(--primary); }
     </style>
 </head>
 <body>
@@ -139,7 +158,9 @@
         <h1>Welcome Back</h1>
         <p>Log in to manage your inventory.</p>
 
-        <div id="error" class="error-msg">Invalid username or password.</div>
+        <div id="error" class="alert-msg error-msg">Invalid username or password.</div>
+        <div id="success-reg" class="alert-msg success-msg">Registration successful! Please log in.</div>
+        <div id="success-reset" class="alert-msg success-msg">Password updated successfully.</div>
 
         <form action="/login" method="POST">
             <div class="form-group">
@@ -153,16 +174,32 @@
             <button type="submit" class="btn-login">Sign In</button>
         </form>
 
+        <div class="auth-footer">
+            <a href="/reset" class="auth-link">Forgot Password?</a>
+            <span>Don't have an account? <a href="/register" class="auth-link bold">Register</a></span>
+        </div>
+
         <div style="margin-top: 32px; font-size: 0.75rem; color: var(--text-muted);">
             Flarego ERP &copy; 2025 • Secure Access
         </div>
     </div>
 
     <script>
-        // Check for error query param to show the error message
         const urlParams = new URLSearchParams(window.location.search);
+        
+        // Error handling
         if (urlParams.has('error')) {
             document.getElementById('error').style.display = 'block';
+        }
+
+        // Registration success handling
+        if (urlParams.get('registered') === 'true') {
+            document.getElementById('success-reg').style.display = 'block';
+        }
+
+        // Password reset success handling
+        if (urlParams.get('reset') === 'success') {
+            document.getElementById('success-reset').style.display = 'block';
         }
     </script>
 </body>

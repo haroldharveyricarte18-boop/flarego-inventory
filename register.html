@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | Flarego ERP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #10b981; /* Green for registration */
+            --primary-hover: #059669;
+            --dark: #0f172a;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            margin: 0;
+            background: radial-gradient(circle at top right, #f0fdf4, #f8fafc);
+            height: 100vh;
+            display: flex;
+            align-items: center; justify-content: center;
+            color: var(--text-main);
+        }
+
+        .login-card {
+            background: white;
+            padding: 40px;
+            border-radius: 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            text-align: center;
+        }
+
+        h1 { font-weight: 800; font-size: 1.8rem; margin-bottom: 8px; letter-spacing: -1px; }
+        p { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 32px; }
+
+        .form-group { text-align: left; margin-bottom: 16px; }
+        label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 6px; color: var(--dark); padding-left: 4px; }
+
+        input {
+            width: 100%; padding: 12px 16px; border-radius: 12px;
+            border: 2px solid #f1f5f9; background: #f8fafc;
+            box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
+            transition: all 0.2s ease;
+        }
+
+        input:focus { outline: none; border-color: var(--primary); background: white; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1); }
+
+        .btn-reg {
+            width: 100%; padding: 14px; background: var(--primary); color: white;
+            border: none; border-radius: 14px; font-weight: 700; font-size: 1rem;
+            cursor: pointer; transition: all 0.2s; margin-top: 10px;
+            box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-reg:hover { background: var(--primary-hover); transform: translateY(-2px); }
+
+        .error-msg {
+            background: #fef2f2; color: #ef4444; padding: 12px; border-radius: 10px;
+            font-size: 0.85rem; font-weight: 600; margin-bottom: 20px; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>Create Account</h1>
+        <p>Join the Flarego ERP network.</p>
+
+        <div id="error" class="error-msg">Username already exists.</div>
+
+        <form action="/register" method="POST">
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" name="display_name" placeholder="John Doe" required>
+            </div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="username" placeholder="johndoe123" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </div>
+            <div class="form-group">
+                <label>Secret Word (Recovery)</label>
+                <input type="text" name="secret" placeholder="e.g. BlueSky" required>
+                <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px; display: block;">You'll need this to reset your password.</small>
+            </div>
+            <button type="submit" class="btn-reg">Create Account</button>
+        </form>
+
+        <div style="margin-top: 24px; font-size: 0.85rem;">
+            <a href="/login" style="text-decoration: none; color: var(--text-muted);">Already have an account? <span style="color: #10b981; font-weight: 700;">Login</span></a>
+        </div>
+    </div>
+
+    <script>
+        if (new URLSearchParams(window.location.search).has('error')) {
+            document.getElementById('error').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

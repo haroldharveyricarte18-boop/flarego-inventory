@@ -39,7 +39,6 @@ type Product struct {
 	NumericStock int
 }
 
-// FIXED: Added UserProfilePic so the HTML can render it
 type ActivityLog struct {
 	ID             int
 	Action         string
@@ -108,10 +107,12 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
+	// Migrations for existing tables
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 
+	// Ensure admin user exists
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
@@ -278,16 +279,14 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]interface{}{"Users": users})
 }
 
-// FIXED: Added JOIN to fetch User Profile Pictures for the Audit Trail
 func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
 
-	// We use LEFT JOIN to get the profile picture from the users table based on user_name
 	query := `
-		SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
-		FROM activity_logs l
-		LEFT JOIN users u ON l.user_name = u.username`
+        SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
+        FROM activity_logs l
+        LEFT JOIN users u ON l.user_name = u.username`
 
 	var args []interface{}
 	if startDate != "" && endDate != "" {
@@ -307,7 +306,7 @@ func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	var logs []ActivityLog
 	for rows.Next() {
 		var l ActivityLog
-		var pic sql.NullString // Handle potential NULLs if user was deleted
+		var pic sql.NullString
 		err := rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
 		if err != nil {
 			continue

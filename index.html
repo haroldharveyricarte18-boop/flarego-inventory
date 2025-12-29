@@ -327,7 +327,7 @@
                          onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="#" onclick="event.preventDefault(); toggleSettingsModal();">⚙️ Profile Settings</a>
+                        <a href="/settings" target="_blank">⚙️ Profile Settings</a>
                         
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
@@ -368,30 +368,6 @@
 
         <div class="main-layout">
             <div class="card">
-                <div id="settings-modal" class="form-section" style="display:none; background: #eff6ff;">
-                    <h3 style="margin-top:0">Account Settings</h3>
-                    <form action="/update-profile" method="POST" enctype="multipart/form-data">
-                        <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
-                             <img src="{{.User.ProfilePic}}" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover;" 
-                                  onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
-                             <div>
-                                 <label>Profile Picture</label>
-                                 <input type="file" name="profile_pic_file" accept="image/*">
-                             </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
-                            <div class="input-group">
-                                <label>Display Name</label>
-                                <input type="text" name="display_name" value="{{.User.DisplayName}}" required>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 20px;">
-                            <button type="submit" class="btn btn-primary">Update Profile</button>
-                            <button type="button" onclick="toggleSettingsModal()" class="btn btn-outline">Close</button>
-                        </div>
-                    </form>
-                </div>
-
                 {{ if eq .User.Role "admin" }}
                 <div id="form-content" class="form-section" style="display: {{if .IsEditing}}block{{else}}none{{end}};">
                     <h3 style="margin-top:0">{{if .EditItem}}Edit Product: {{.EditItem.Name}}{{else}}Add New Product{{end}}</h3>
@@ -504,15 +480,7 @@
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
         }
 
-        function toggleSettingsModal() {
-            const m = document.getElementById('settings-modal');
-            if (m) {
-                m.style.display = m.style.display === 'none' ? 'block' : 'none';
-                // Close the dropdown after selecting
-                const d = document.getElementById('profileDropdown');
-                if (d) d.style.display = 'none';
-            }
-        }
+        // Cleaned up: Removed toggleSettingsModal as it is no longer used locally
 
         window.onclick = function() {
             const dropdown = document.getElementById('profileDropdown');

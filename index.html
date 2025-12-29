@@ -46,7 +46,7 @@
         .avatar {
             width: 42px;
             height: 42px;
-            border-radius: 12px; /* Changed to match modern UI style */
+            border-radius: 12px; 
             object-fit: cover;
             border: 2px solid white;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
@@ -327,7 +327,7 @@
                          onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="javascript:void(0)" onclick="toggleSettingsModal()">⚙️ Profile Settings</a>
+                        <a href="#" onclick="event.preventDefault(); toggleSettingsModal();">⚙️ Profile Settings</a>
                         
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
@@ -506,7 +506,12 @@
 
         function toggleSettingsModal() {
             const m = document.getElementById('settings-modal');
-            m.style.display = m.style.display === 'none' ? 'block' : 'none';
+            if (m) {
+                m.style.display = m.style.display === 'none' ? 'block' : 'none';
+                // Close the dropdown after selecting
+                const d = document.getElementById('profileDropdown');
+                if (d) d.style.display = 'none';
+            }
         }
 
         window.onclick = function() {

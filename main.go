@@ -107,12 +107,10 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations for existing tables
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 
-	// Ensure admin user exists
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
@@ -187,6 +185,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&dbPassword)
 	if err == nil && password == dbPassword {
 		http.SetCookie(w, &http.Cookie{Name: "session_token", Value: username, Path: "/", HttpOnly: true})
+		// AUDIT: Log Login
+		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Login", "Account", "User signed in", username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
@@ -250,6 +250,8 @@ func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil && dbAnswer == answer {
 			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
 			if err == nil {
+				// AUDIT: Log Password Reset
+				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
 				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
 				return
 			}
@@ -380,11 +382,19 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	newRole := r.URL.Query().Get("role")
 
+	// AUDIT: Get username before updating for the log
+	var targetUser string
+	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
+
 	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
 	if err != nil {
 		http.Error(w, "Update failed", 500)
 		return
 	}
+
+	// AUDIT: Log Role Change
+	logActivity(r, "User Management", targetUser, "Changed role to "+newRole)
+
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 
@@ -507,8 +517,12 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		base64Encoding += base64.StdEncoding.EncodeToString(fileBytes)
 		db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, base64Encoding, cookie.Value)
+		// AUDIT: Log Profile Pic Change
+		logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
 	} else {
 		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
+		// AUDIT: Log Name Change
+		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -528,6 +542,11 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_token")
+	if err == nil {
+		// AUDIT: Log Logout
+		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Logout", "Account", "User signed out", cookie.Value)
+	}
 	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

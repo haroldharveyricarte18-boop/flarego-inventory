@@ -11,6 +11,9 @@
             --dark: #0f172a;
             --text-main: #1e293b;
             --text-muted: #64748b;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --success: #10b981;
         }
 
         body {
@@ -25,27 +28,56 @@
         .login-card {
             background: white; padding: 40px; border-radius: 32px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
-            width: 100%; max-width: 400px; border: 1px solid rgba(226, 232, 240, 0.8);
+            width: 100%; max-width: 420px; border: 1px solid rgba(226, 232, 240, 0.8);
             text-align: center;
         }
 
         h1 { font-weight: 800; font-size: 1.8rem; margin-bottom: 8px; letter-spacing: -1px; }
         p { color: var(--text-muted); font-size: 0.95rem; margin-bottom: 32px; }
 
-        .form-group { text-align: left; margin-bottom: 16px; }
+        .form-group { text-align: left; margin-bottom: 16px; position: relative; }
         label { display: block; font-size: 0.85rem; font-weight: 700; margin-bottom: 6px; color: var(--dark); }
 
         input {
             width: 100%; padding: 12px 16px; border-radius: 12px;
             border: 2px solid #f1f5f9; background: #f8fafc;
             box-sizing: border-box; font-family: inherit; font-size: 0.95rem;
+            transition: all 0.2s;
         }
+
+        input:focus { outline: none; border-color: var(--primary); background: white; }
+
+        .toggle-password {
+            position: absolute; right: 16px; top: 38px;
+            cursor: pointer; color: var(--text-muted);
+            font-size: 0.75rem; font-weight: 800; user-select: none;
+        }
+
+        /* Strength Meter Styles */
+        .strength-container { margin-top: 8px; margin-bottom: 16px; }
+        .strength-bar {
+            height: 6px; width: 100%; background: #f1f5f9;
+            border-radius: 10px; overflow: hidden; display: flex;
+        }
+        .strength-progress {
+            height: 100%; width: 0%; transition: all 0.3s ease;
+        }
+        .req-list {
+            list-style: none; padding: 0; margin: 10px 0 0 0;
+            font-size: 0.75rem; color: var(--text-muted);
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+        }
+        .req-item.valid { color: var(--success); font-weight: 600; }
+        .req-item.valid::before { content: '✓ '; }
+        .req-item.invalid::before { content: '○ '; }
 
         .btn-reset {
             width: 100%; padding: 14px; background: var(--primary); color: white;
             border: none; border-radius: 14px; font-weight: 700; cursor: pointer;
-            margin-top: 10px; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+            transition: all 0.2s;
         }
+        .btn-reset:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; }
 
         .error-msg {
             background: #fef2f2; color: #ef4444; padding: 12px; border-radius: 10px;
@@ -55,36 +87,98 @@
 </head>
 <body>
     <div class="login-card">
-        <h1>Reset Password</h1>
-        <p>Recover your account access.</p>
+        <h1>New Password</h1>
+        <p>Complete recovery for <strong>{{.Username}}</strong></p>
 
-        <div id="error" class="error-msg">Incorrect username or secret word.</div>
+        <div id="error" class="error-msg">Incorrect secret word. Please try again.</div>
 
         <form action="/reset-password" method="POST">
-            <div class="form-group">
-                <label>Username</label>
-                <input type="text" name="username" value="{{.Username}}" required>
-            </div>
+            <input type="hidden" name="username" value="{{.Username}}">
+            
             <div class="form-group">
                 <label>Your Secret Word</label>
-                <input type="text" name="secret_answer" placeholder="Enter your secret answer" required>
+                <input type="text" name="secret_answer" placeholder="Verify your secret word" required autofocus>
             </div>
+
             <div class="form-group">
                 <label>New Password</label>
-                <input type="password" name="new_password" placeholder="Create new password" required>
+                <input type="password" id="new_password" name="new_password" placeholder="Min. 8 characters" required>
+                <span class="toggle-password" onclick="togglePass()">SHOW</span>
+                
+                <div class="strength-container">
+                    <div class="strength-bar">
+                        <div id="progress" class="strength-progress"></div>
+                    </div>
+                    <ul class="req-list">
+                        <li id="len" class="req-item invalid">8+ Characters</li>
+                        <li id="num" class="req-item invalid">1+ Number</li>
+                        <li id="spec" class="req-item invalid">1+ Special</li>
+                        <li id="upper" class="req-item invalid">1+ Uppercase</li>
+                    </ul>
+                </div>
             </div>
-            <button type="submit" class="btn-reset">Update Password</button>
+
+            <button type="submit" id="submitBtn" class="btn-reset" disabled>Update Password</button>
         </form>
 
         <div style="margin-top: 24px; font-size: 0.85rem;">
-            <a href="/login" style="text-decoration: none; color: var(--text-muted);">Back to Login</a>
+            <a href="/login" style="text-decoration: none; color: var(--text-muted); font-weight: 600;">Back to Login</a>
         </div>
     </div>
 
     <script>
-        // Shows error message if URL contains ?error=
-        if (new URLSearchParams(window.location.search).has('error')) {
+        // Error handling
+        if (new URLSearchParams(window.location.search).get('error') === 'invalid') {
             document.getElementById('error').style.display = 'block';
+        }
+
+        const passInput = document.getElementById('new_password');
+        const progress = document.getElementById('progress');
+        const submitBtn = document.getElementById('submitBtn');
+
+        const requirements = {
+            len: (val) => val.length >= 8,
+            num: (val) => /[0-9]/.test(val),
+            spec: (val) => /[^A-Za-z0-9]/.test(val),
+            upper: (val) => /[A-Z]/.test(val)
+        };
+
+        passInput.addEventListener('input', () => {
+            const val = passInput.value;
+            let passedCount = 0;
+
+            Object.keys(requirements).forEach(id => {
+                const isValid = requirements[id](val);
+                const element = document.getElementById(id);
+                if (isValid) {
+                    element.classList.replace('invalid', 'valid');
+                    passedCount++;
+                } else {
+                    element.classList.replace('valid', 'invalid');
+                }
+            });
+
+            // Update Progress Bar
+            const percentage = (passedCount / 4) * 100;
+            progress.style.width = percentage + '%';
+
+            if (passedCount <= 1) progress.style.backgroundColor = 'var(--danger)';
+            else if (passedCount <= 3) progress.style.backgroundColor = 'var(--warning)';
+            else progress.style.backgroundColor = 'var(--success)';
+
+            // Enable/Disable Button
+            submitBtn.disabled = passedCount < 4;
+        });
+
+        function togglePass() {
+            const toggleBtn = document.querySelector('.toggle-password');
+            if (passInput.type === 'password') {
+                passInput.type = 'text';
+                toggleBtn.textContent = 'HIDE';
+            } else {
+                passInput.type = 'password';
+                toggleBtn.textContent = 'SHOW';
+            }
         }
     </script>
 </body>

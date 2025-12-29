@@ -44,6 +44,7 @@ type ActivityLog struct {
 	Action      string
 	ProductName string
 	Details     string
+	UserName    string
 	CreatedAt   time.Time
 }
 
@@ -73,42 +74,45 @@ func initDB() {
 	}
 
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS products (
-			id SERIAL PRIMARY KEY,
-			name TEXT,
-			price TEXT,
-			description TEXT,
-			stock TEXT,
-			cost_price NUMERIC(10,2) DEFAULT 0.00
-		);
-		CREATE TABLE IF NOT EXISTS activity_logs (
-			id SERIAL PRIMARY KEY,
-			action TEXT,
-			product_name TEXT,
-			details TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			username TEXT UNIQUE,
-			password TEXT,
-			display_name TEXT,
-			profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
-			secret_answer TEXT,
-			role TEXT DEFAULT 'staff',
-			theme_preference TEXT DEFAULT 'light'
-		);
-	`)
+        CREATE TABLE IF NOT EXISTS products (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            price TEXT,
+            description TEXT,
+            stock TEXT,
+            cost_price NUMERIC(10,2) DEFAULT 0.00
+        );
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id SERIAL PRIMARY KEY,
+            action TEXT,
+            product_name TEXT,
+            details TEXT,
+            user_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT,
+            display_name TEXT,
+            profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
+            secret_answer TEXT,
+            role TEXT DEFAULT 'staff',
+            theme_preference TEXT DEFAULT 'light'
+        );
+    `)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
+	// Migrations
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
+	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
-			 VALUES ('admin', 'admin123', 'System Admin', 'admin') 
-			 ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
+             VALUES ('admin', 'admin123', 'System Admin', 'admin') 
+             ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
 }
 
 // --- UTILITIES ---
@@ -120,8 +124,13 @@ func parsePrice(priceStr string) float64 {
 	return price
 }
 
-func logActivity(action, name, details string) {
-	db.Exec("INSERT INTO activity_logs (action, product_name, details) VALUES ($1, $2, $3)", action, name, details)
+func logActivity(r *http.Request, action, name, details string) {
+	cookie, err := r.Cookie("session_token")
+	username := "System"
+	if err == nil {
+		username = cookie.Value
+	}
+	db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", action, name, details, username)
 }
 
 func countSalesToday() int {
@@ -201,15 +210,20 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-// --- PASSWORD RECOVERY HANDLERS ---
-
 func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
+		username := r.URL.Query().Get("username")
+		if username != "" {
+			var u User
+			u.Username = username
+			tmpl, _ := template.ParseFiles("reset.html")
+			tmpl.Execute(w, u)
+			return
+		}
 		tmpl, _ := template.ParseFiles("forgot_password.html")
 		tmpl.Execute(w, nil)
 		return
 	}
-
 	username := r.FormValue("username")
 	var u User
 	err := db.QueryRow("SELECT username FROM users WHERE username=$1", username).Scan(&u.Username)
@@ -217,7 +231,6 @@ func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/forgot?error=usernotfound", http.StatusSeeOther)
 		return
 	}
-
 	tmpl, _ := template.ParseFiles("reset.html")
 	tmpl.Execute(w, u)
 }
@@ -238,11 +251,11 @@ func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		http.Redirect(w, r, "/forgot?username="+username+"&error=invalid", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/reset-password?error=invalid", http.StatusSeeOther)
+	http.Redirect(w, r, "/forgot", http.StatusSeeOther)
 }
-
-// --- PRODUCT & PROFILE HANDLERS ---
 
 func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, username, display_name, role, profile_pic FROM users ORDER BY id ASC")
@@ -261,6 +274,78 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, _ := template.ParseFiles("users.html")
 	tmpl.Execute(w, map[string]interface{}{"Users": users})
+}
+
+func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
+	startDate := r.URL.Query().Get("start")
+	endDate := r.URL.Query().Get("end")
+
+	query := "SELECT id, action, product_name, details, user_name, created_at FROM activity_logs"
+	var args []interface{}
+
+	if startDate != "" && endDate != "" {
+		query += " WHERE created_at::date BETWEEN $1 AND $2"
+		args = append(args, startDate, endDate)
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer rows.Close()
+
+	var logs []ActivityLog
+	for rows.Next() {
+		var l ActivityLog
+		rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &l.CreatedAt)
+		logs = append(logs, l)
+	}
+
+	tmpl, _ := template.ParseFiles("audit.html")
+	tmpl.Execute(w, map[string]interface{}{
+		"Logs":  logs,
+		"Start": startDate,
+		"End":   endDate,
+	})
+}
+
+// NEW: Export Filtered Audit Logs
+func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
+	startDate := r.URL.Query().Get("start")
+	endDate := r.URL.Query().Get("end")
+
+	query := "SELECT created_at, user_name, action, product_name, details FROM activity_logs"
+	var args []interface{}
+
+	if startDate != "" && endDate != "" {
+		query += " WHERE created_at::date BETWEEN $1 AND $2"
+		args = append(args, startDate, endDate)
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer rows.Close()
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment;filename=audit_report_%s.csv", time.Now().Format("2006-01-02")))
+
+	writer := csv.NewWriter(w)
+	writer.Write([]string{"Timestamp", "User", "Action", "Product", "Details"})
+
+	for rows.Next() {
+		var ts time.Time
+		var u, a, p, d string
+		rows.Scan(&ts, &u, &a, &p, &d)
+		writer.Write([]string{ts.Format("2006-01-02 15:04:05"), u, a, p, d})
+	}
+	writer.Flush()
 }
 
 func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
@@ -355,10 +440,10 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 
 		if id != "" {
 			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6", name, price, cost, desc, stock, id)
-			logActivity("Updated", name, "Product info modified")
+			logActivity(r, "Updated", name, "Product info modified")
 		} else {
 			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)", name, price, cost, desc, stock)
-			logActivity("Added", name, "New product created")
+			logActivity(r, "Added", name, "New product created")
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -391,7 +476,7 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 		res, _ := db.Exec("UPDATE products SET stock = (stock::int - 1)::text WHERE id=$1 AND stock::int > 0", id)
 		count, _ := res.RowsAffected()
 		if count > 0 {
-			logActivity("Sale", name, "Sold 1 unit")
+			logActivity(r, "Sale", name, "Sold 1 unit")
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -404,7 +489,10 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
+	var name string
+	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
 	db.Exec("DELETE FROM products WHERE id=$1", id)
+	logActivity(r, "Deleted", name, "Product removed from inventory")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -420,6 +508,7 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 		writer.Write([]string{n, p, s})
 	}
 	writer.Flush()
+	logActivity(r, "Export", "Inventory CSV", "Admin exported the product list")
 }
 
 func main() {
@@ -432,11 +521,12 @@ func main() {
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/", checkAuth(homeHandler))
 
-	// PASSWORD RECOVERY ROUTES
 	http.HandleFunc("/forgot", forgotPasswordHandler)
 	http.HandleFunc("/reset-password", resetPasswordHandler)
 
-	// USER MANAGEMENT ROUTES
+	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
+	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
+
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
 	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
 

@@ -30,6 +30,59 @@
 
         .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 
+        /* --- USER PROFILE STYLES --- */
+        .user-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            position: relative;
+            cursor: pointer;
+            padding: 5px 12px;
+            border-radius: 12px;
+            transition: background 0.2s;
+        }
+
+        .user-section:hover { background: #f1f5f9; }
+
+        .avatar {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid white;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        .user-meta { text-align: right; }
+        .user-meta .name { display: block; font-weight: 700; font-size: 0.9rem; color: var(--dark); }
+        .user-meta .role { display: block; font-size: 0.7rem; color: var(--text-muted); font-weight: 600; }
+
+        .profile-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 200px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            display: none;
+            z-index: 100;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .profile-dropdown a {
+            display: block;
+            padding: 12px 16px;
+            text-decoration: none;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .profile-dropdown a:hover { background: #f8fafc; color: var(--primary); }
+
         /* --- ALERT BANNER --- */
         .alert-banner {
             background: #fef2f2;
@@ -132,7 +185,6 @@
         .btn-outline { border: 2px solid #e2e8f0; color: var(--text-main); background: white; }
         .btn-outline:hover { background: #f8fafc; border-color: #cbd5e1; }
 
-        /* NEW: POS Sell Button */
         .btn-sell {
             background: #ecfdf5;
             color: var(--success);
@@ -177,7 +229,6 @@
             border-left: 4px solid var(--primary);
         }
 
-        /* NEW: Hide actions until hover */
         .product-actions {
             opacity: 0;
             transition: opacity 0.2s ease;
@@ -234,9 +285,25 @@
                 <h1 class="brand-text">Flare<span>go</span></h1>
             </div>
 
-            <div style="display: flex; gap: 12px;">
-                <a href="/export" class="btn btn-outline">📥 Export CSV</a>
-                <button onclick="toggleForm()" class="btn btn-primary">➕ New Product</button>
+            <div style="display: flex; gap: 24px; align-items: center;">
+                <div style="display: flex; gap: 12px;">
+                    <a href="/export" class="btn btn-outline">📥 Export CSV</a>
+                    <button onclick="toggleForm()" class="btn btn-primary">➕ New Product</button>
+                </div>
+
+                <div class="user-section" onclick="toggleProfileDropdown(event)">
+                    <div class="user-meta">
+                        <span class="name">{{.User.DisplayName}}</span>
+                        <span class="role">Administrator</span>
+                    </div>
+                    <img src="{{.User.ProfilePic}}" class="avatar" alt="Profile">
+                    
+                    <div id="profileDropdown" class="profile-dropdown">
+                        <a href="#" onclick="toggleSettingsModal()">⚙️ Profile Settings</a>
+                        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
+                        <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -253,8 +320,7 @@
                 <div class="value">{{.TotalStockItems}}</div>
             </div>
             <div class="stat-card" style="border-bottom: 4px solid var(--primary);">
-                <h4>Sales Made</h4>
-                <div class="value">{{.TotalSales}}</div>
+                <h4>Sales Today</h4> <div class="value">{{.TotalSales}}</div>
             </div>
             <div class="stat-card">
                 <h4>Valuation</h4>
@@ -268,6 +334,26 @@
 
         <div class="main-layout">
             <div class="card">
+                <div id="settings-modal" class="form-section" style="display:none; background: #eff6ff;">
+                    <h3 style="margin-top:0">Account Settings</h3>
+                    <form action="/update-profile" method="POST">
+                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px;">
+                            <div class="input-group">
+                                <label>Display Name</label>
+                                <input type="text" name="display_name" value="{{.User.DisplayName}}" required>
+                            </div>
+                            <div class="input-group">
+                                <label>Profile Image URL</label>
+                                <input type="text" name="profile_pic" value="{{.User.ProfilePic}}" required>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn btn-primary">Update Profile</button>
+                            <button type="button" onclick="toggleSettingsModal()" class="btn btn-outline">Close</button>
+                        </div>
+                    </form>
+                </div>
+
                 <div id="form-content" class="form-section" style="display: {{if .IsEditing}}block{{else}}none{{end}};">
                     <h3 style="margin-top:0">{{if .EditItem}}Edit Product{{else}}Add New Product{{end}}</h3>
                     <form action="/add" method="POST">
@@ -353,7 +439,7 @@
         </div>
 
         <p style="text-align:center; font-size: 0.8rem; color: var(--text-muted); margin-top: 40px;">
-            <b>Flarego ERP v2.6</b> • POS Enabled • Cloud SQL Connected
+            <b>Flarego ERP v2.8</b> • POS Enabled • Secure Sessions
         </p>
     </div>
 
@@ -361,6 +447,23 @@
         function toggleForm() {
             const f = document.getElementById('form-content');
             f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleProfileDropdown(e) {
+            e.stopPropagation();
+            const d = document.getElementById('profileDropdown');
+            d.style.display = d.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function toggleSettingsModal() {
+            const m = document.getElementById('settings-modal');
+            m.style.display = m.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Close dropdown when clicking outside
+        window.onclick = function() {
+            const dropdown = document.getElementById('profileDropdown');
+            if (dropdown) dropdown.style.display = 'none';
         }
 
         // Instant Filter Script
@@ -372,6 +475,7 @@
             });
         });
 
+        // Health Chart Logic
         const healthScore = Number("{{.HealthScore}}");
         let chartColor = '#6366f1';
         if (healthScore < 30) chartColor = '#ef4444';

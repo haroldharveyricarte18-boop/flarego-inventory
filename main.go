@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"encoding/base64" // Added for persistent image storage
+	"encoding/base64"
 	"encoding/csv"
 	"fmt"
 	"html/template"
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq" // Required PostgreSQL driver
+	_ "github.com/lib/pq"
 )
 
 // --- MODELS ---
@@ -39,13 +39,15 @@ type Product struct {
 	NumericStock int
 }
 
+// FIXED: Added UserProfilePic so the HTML can render it
 type ActivityLog struct {
-	ID          int
-	Action      string
-	ProductName string
-	Details     string
-	UserName    string
-	CreatedAt   time.Time
+	ID             int
+	Action         string
+	ProductName    string
+	Details        string
+	UserName       string
+	UserProfilePic string
+	CreatedAt      time.Time
 }
 
 func (p Product) GetNumericStock() int {
@@ -69,7 +71,6 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// Set Database Session to local timezone (Philippines Standard Time)
 	_, err = db.Exec("SET TIME ZONE 'Asia/Manila';")
 	if err != nil {
 		log.Println("Warning: Could not set database timezone:", err)
@@ -107,7 +108,6 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
@@ -278,23 +278,28 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]interface{}{"Users": users})
 }
 
+// FIXED: Added JOIN to fetch User Profile Pictures for the Audit Trail
 func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
 
-	query := "SELECT id, action, product_name, details, user_name, created_at FROM activity_logs"
-	var args []interface{}
+	// We use LEFT JOIN to get the profile picture from the users table based on user_name
+	query := `
+		SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
+		FROM activity_logs l
+		LEFT JOIN users u ON l.user_name = u.username`
 
+	var args []interface{}
 	if startDate != "" && endDate != "" {
-		query += " WHERE created_at::date BETWEEN $1 AND $2"
+		query += " WHERE l.created_at::date BETWEEN $1 AND $2"
 		args = append(args, startDate, endDate)
 	}
 
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY l.created_at DESC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		http.Error(w, "Database error", 500)
+		http.Error(w, "Database error: "+err.Error(), 500)
 		return
 	}
 	defer rows.Close()
@@ -302,7 +307,16 @@ func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	var logs []ActivityLog
 	for rows.Next() {
 		var l ActivityLog
-		rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &l.CreatedAt)
+		var pic sql.NullString // Handle potential NULLs if user was deleted
+		err := rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if pic.Valid {
+			l.UserProfilePic = pic.String
+		} else {
+			l.UserProfilePic = "https://ui-avatars.com/api/?name=" + l.UserName
+		}
 		logs = append(logs, l)
 	}
 
@@ -464,27 +478,22 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// FIXED: updateProfileHandler now saves Image as Base64 string directly in DB
 func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie("session_token")
-	r.ParseMultipartForm(5 << 20) // 5MB limit
+	r.ParseMultipartForm(5 << 20)
 	displayName := r.FormValue("display_name")
 
 	file, _, err := r.FormFile("profile_pic_file")
 	if err == nil {
 		defer file.Close()
-
-		// Read the file bytes
 		fileBytes, err := io.ReadAll(file)
 		if err != nil {
 			http.Error(w, "Failed to read image", 500)
 			return
 		}
 
-		// Detect MimeType to build the data URI
 		mimeType := http.DetectContentType(fileBytes)
 		var base64Encoding string
-
 		switch mimeType {
 		case "image/jpeg":
 			base64Encoding = "data:image/jpeg;base64,"
@@ -497,10 +506,7 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Append the actual base64 data
 		base64Encoding += base64.StdEncoding.EncodeToString(fileBytes)
-
-		// Save the full Base64 string to the DB (Persistence through deployments!)
 		db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, base64Encoding, cookie.Value)
 	} else {
 		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
@@ -555,21 +561,16 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	// Handle standard login/register
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/", checkAuth(homeHandler))
-
 	http.HandleFunc("/forgot", forgotPasswordHandler)
 	http.HandleFunc("/reset-password", resetPasswordHandler)
-
 	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
 	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
 	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
-
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
 	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
-
 	http.HandleFunc("/settings", checkAuth(func(w http.ResponseWriter, r *http.Request) {
 		cookie, _ := r.Cookie("session_token")
 		var u User
@@ -577,11 +578,9 @@ func main() {
 		tmpl, _ := template.ParseFiles("settings.html")
 		tmpl.Execute(w, map[string]interface{}{"User": u})
 	}))
-
 	http.HandleFunc("/update-profile", checkAuth(updateProfileHandler))
 	http.HandleFunc("/logout", checkAuth(logoutHandler))
 	http.HandleFunc("/sell", checkAuth(sellHandler))
-
 	http.HandleFunc("/add", checkAuth(adminOnly(addHandler)))
 	http.HandleFunc("/delete", checkAuth(adminOnly(deleteHandler)))
 	http.HandleFunc("/export", checkAuth(adminOnly(exportHandler)))

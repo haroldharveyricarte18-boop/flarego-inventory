@@ -34,7 +34,6 @@
             margin-bottom: 30px; 
         }
 
-        /* Top Controls Layout */
         .controls-grid {
             display: grid;
             grid-template-columns: 1.5fr 1fr;
@@ -141,7 +140,6 @@
             margin-right: 10px;
         }
 
-        /* Table Styling */
         .audit-card {
             background: white;
             border-radius: 20px;
@@ -154,7 +152,6 @@
         th { background: #f8fafc; padding: 16px; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
         td { padding: 16px; border-top: 1px solid #f1f5f9; font-size: 0.9rem; }
 
-        /* User Identity Styling */
         .user-identity {
             display: flex;
             align-items: center;
@@ -167,6 +164,7 @@
             border-radius: 8px;
             object-fit: cover;
             border: 1px solid #e2e8f0;
+            background: #f1f5f9; /* Fallback color */
         }
 
         .action-badge {
@@ -251,7 +249,9 @@
                         <td style="color: var(--text-muted);">{{.CreatedAt.Local.Format "Jan 02, 2006 | 15:04"}}</td>
                         <td>
                             <div class="user-identity">
-                                <img src="{{.UserProfilePic}}" class="audit-avatar" alt="User" 
+                                <img src="{{if .UserProfilePic}}{{.UserProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.UserName}}&background=6366f1&color=fff{{end}}" 
+                                     class="audit-avatar" 
+                                     alt="User" 
                                      onerror="this.src='https://ui-avatars.com/api/?name={{.UserName}}&background=6366f1&color=fff'">
                                 <strong>{{.UserName}}</strong>
                             </div>
@@ -299,7 +299,7 @@
             if (start && end) {
                 exportUrl += `?start=${start}&end=${end}`;
             }
-                       
+                               
             window.location.href = exportUrl;
         });
     </script>

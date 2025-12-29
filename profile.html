@@ -2,56 +2,183 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profile Settings - Flarego</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }
-        .card { background: white; border-radius: 24px; padding: 32px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); max-width: 500px; margin: auto; border: 1px solid #e2e8f0; }
-        .back-link { display: inline-flex; align-items: center; margin-bottom: 24px; color: #64748b; text-decoration: none; font-weight: 700; font-size: 0.9rem; gap: 8px; }
-        .back-link:hover { color: #6366f1; }
-        
-        .form-group { margin-bottom: 20px; }
-        label { display: block; font-size: 0.85rem; font-weight: 700; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
-        input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; font-family: inherit; box-sizing: border-box; }
-        input:focus { outline: 2px solid #6366f1; border-color: transparent; }
+        :root {
+            --primary: #6366f1;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --bg: #f8fafc;
+            --border: #e2e8f0;
+            --white: #ffffff;
+        }
 
-        .profile-preview { width: 80px; height: 80px; border-radius: 20px; object-fit: cover; margin-bottom: 20px; border: 4px solid #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background: var(--bg); 
+            padding: 40px 20px; 
+            color: var(--text-main); 
+            margin: 0;
+        }
+
+        .card { 
+            background: var(--white); 
+            border-radius: 24px; 
+            padding: 40px; 
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); 
+            max-width: 480px; 
+            margin: auto; 
+            border: 1px solid var(--border); 
+        }
+
+        .back-link { 
+            display: inline-flex; 
+            align-items: center; 
+            margin-bottom: 24px; 
+            color: var(--text-muted); 
+            text-decoration: none; 
+            font-weight: 700; 
+            font-size: 0.85rem; 
+            gap: 8px; 
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: var(--primary); }
+
+        h1 { margin: 0; font-size: 1.6rem; letter-spacing: -1px; font-weight: 800; }
+        .subtitle { color: var(--text-muted); margin-top: 4px; font-size: 0.9rem; margin-bottom: 32px; }
+
+        .form-group { margin-bottom: 24px; }
         
-        .btn-save { background: #6366f1; color: white; border: none; padding: 14px 24px; border-radius: 12px; font-weight: 800; cursor: pointer; width: 100%; transition: transform 0.2s; }
-        .btn-save:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
+        label { 
+            display: block; 
+            font-size: 0.7rem; 
+            font-weight: 800; 
+            color: var(--text-muted); 
+            margin-bottom: 8px; 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em;
+        }
+
+        input, select { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 14px; 
+            border: 1px solid var(--border); 
+            font-family: inherit; 
+            box-sizing: border-box; 
+            font-size: 0.95rem;
+            color: var(--text-main);
+            background: #fcfdfe;
+            transition: all 0.2s;
+        }
+
+        input:focus, select:focus { 
+            outline: none; 
+            border-color: var(--primary); 
+            background: var(--white);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); 
+        }
+
+        input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+
+        /* Profile Image Section */
+        .avatar-section {
+            text-align: center;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .profile-preview { 
+            width: 100px; 
+            height: 100px; 
+            border-radius: 28px; 
+            object-fit: cover; 
+            border: 4px solid var(--white); 
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
+            background: var(--bg);
+        }
+
+        .btn-save { 
+            background: var(--primary); 
+            color: white; 
+            border: none; 
+            padding: 16px; 
+            border-radius: 14px; 
+            font-weight: 800; 
+            font-size: 1rem;
+            cursor: pointer; 
+            width: 100%; 
+            transition: all 0.3s; 
+            margin-top: 10px;
+        }
+        .btn-save:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); 
+            filter: brightness(1.1);
+        }
     </style>
 </head>
 <body>
     <div class="card">
-        <a href="/" class="back-link">← Back to Dashboard</a>
-        <h1 style="margin:0; font-size: 1.5rem; letter-spacing: -1px;">Profile Settings</h1>
-        <p style="color: #64748b; margin-bottom: 30px;">Update your personal information and preferences.</p>
+        <a href="/" class="back-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Dashboard
+        </a>
+
+        <header>
+            <h1>Profile Settings</h1>
+            <p class="subtitle">Update your identity and preferences.</p>
+        </header>
 
         <form action="/update-profile" method="POST">
-            <div style="text-align: center;">
-                <img src="{{.User.ProfilePic}}" class="profile-preview" id="preview">
+            <div class="avatar-section">
+                <img src="{{.User.ProfilePic}}" 
+                     class="profile-preview" 
+                     id="preview"
+                     onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff&bold=true'">
             </div>
 
             <div class="form-group">
-                <label>Display Name</label>
-                <input type="text" name="display_name" value="{{.User.DisplayName}}" required>
+                <label>Account Username</label>
+                <input type="text" value="@{{.User.Username}}" disabled>
             </div>
 
             <div class="form-group">
-                <label>Profile Image URL</label>
-                <input type="text" name="profile_pic" id="pic_url" value="{{.User.ProfilePic}}" oninput="document.getElementById('preview').src=this.value">
+                <label>Full Display Name</label>
+                <input type="text" name="display_name" value="{{.User.DisplayName}}" placeholder="Enter your name" required>
             </div>
 
             <div class="form-group">
-                <label>Theme (Experimental)</label>
-                <select name="theme" style="width:100%; padding:12px; border-radius:12px; border:1px solid #e2e8f0;">
-                    <option value="light" {{if eq .User.ThemePreference "light"}}selected{{end}}>Light Mode</option>
-                    <option value="dark" {{if eq .User.ThemePreference "dark"}}selected{{end}}>Dark Mode</option>
+                <label>Profile Picture URL</label>
+                <input type="text" name="profile_pic" id="pic_url" value="{{.User.ProfilePic}}" 
+                       placeholder="https://example.com/image.jpg"
+                       oninput="updatePreview(this.value)">
+            </div>
+
+            <div class="form-group">
+                <label>Interface Theme</label>
+                <select name="theme">
+                    <option value="light" {{if eq .User.ThemePreference "light"}}selected{{end}}>☀️ Light Mode</option>
+                    <option value="dark" {{if eq .User.ThemePreference "dark"}}selected{{end}}>🌙 Dark Mode (Beta)</option>
                 </select>
             </div>
 
-            <button type="submit" class="btn-save">Save Changes</button>
+            <button type="submit" class="btn-save">Update Profile</button>
         </form>
     </div>
+
+    <script>
+        function updatePreview(url) {
+            const preview = document.getElementById('preview');
+            if (url.trim() === "") {
+                // If empty, revert to UI Avatar
+                preview.src = "https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff&bold=true";
+            } else {
+                preview.src = url;
+            }
+        }
+    </script>
 </body>
 </html>

@@ -49,8 +49,8 @@
             height: 120px;
             border-radius: 50%;
             object-fit: cover;
-            border: 4px solid white;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            border: 4px solid var(--bg);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
             background: #eee;
         }
 
@@ -89,6 +89,7 @@
             color: var(--muted);
         }
 
+        /* Modern file input hack */
         input[type="file"]::file-selector-button {
             padding: 8px 16px;
             border-radius: 8px;
@@ -122,6 +123,10 @@
             transform: translateY(-1px);
         }
 
+        .btn-save:active {
+            transform: translateY(0);
+        }
+
         .footer-links {
             margin-top: 32px;
             padding-top: 24px;
@@ -150,17 +155,18 @@
             font-weight: 600;
             opacity: 0.8;
         }
+
+        .logout-link:hover {
+            opacity: 1;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
 
 <div class="settings-card">
     <div class="avatar-container">
-        <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
-             class="avatar-preview" 
-             id="preview" 
-             alt="Avatar"
-             onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
+        <img src="{{.User.ProfilePic}}" class="avatar-preview" id="preview" alt="Avatar">
     </div>
     
     <h2 style="margin: 0 0 8px 0; font-weight: 800;">Account Settings</h2>
@@ -182,7 +188,7 @@
     </form>
 
     <div class="footer-links">
-        <a href="/" class="back-link">← Back to Dashboard</a>
+        <a href="/" class="back-link" onclick="if(window.opener) { window.close(); return false; }">← Back to Dashboard</a>
         <a href="/logout" class="logout-link">Sign out of session</a>
     </div>
 </div>
@@ -201,15 +207,7 @@
                 fileInput.value = "";
                 return;
             }
-            
-            // Generate a blob URL for immediate visual feedback
-            const objectUrl = URL.createObjectURL(file);
-            preview.src = objectUrl;
-            
-            // Clean up memory after image loads
-            preview.onload = () => {
-                URL.revokeObjectURL(objectUrl);
-            }
+            preview.src = URL.createObjectURL(file);
         }
     }
 </script>

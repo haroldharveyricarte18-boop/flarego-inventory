@@ -73,32 +73,32 @@ func initDB() {
 	}
 
 	_, err = db.Exec(`
-        CREATE TABLE IF NOT EXISTS products (
-            id SERIAL PRIMARY KEY,
-            name TEXT,
-            price TEXT,
-            description TEXT,
-            stock TEXT,
-            cost_price NUMERIC(10,2) DEFAULT 0.00
-        );
-        CREATE TABLE IF NOT EXISTS activity_logs (
-            id SERIAL PRIMARY KEY,
-            action TEXT,
-            product_name TEXT,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT,
-            display_name TEXT,
-            profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
-            secret_answer TEXT,
-            role TEXT DEFAULT 'staff',
-            theme_preference TEXT DEFAULT 'light'
-        );
-    `)
+		CREATE TABLE IF NOT EXISTS products (
+			id SERIAL PRIMARY KEY,
+			name TEXT,
+			price TEXT,
+			description TEXT,
+			stock TEXT,
+			cost_price NUMERIC(10,2) DEFAULT 0.00
+		);
+		CREATE TABLE IF NOT EXISTS activity_logs (
+			id SERIAL PRIMARY KEY,
+			action TEXT,
+			product_name TEXT,
+			details TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS users (
+			id SERIAL PRIMARY KEY,
+			username TEXT UNIQUE,
+			password TEXT,
+			display_name TEXT,
+			profile_pic TEXT DEFAULT 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff',
+			secret_answer TEXT,
+			role TEXT DEFAULT 'staff',
+			theme_preference TEXT DEFAULT 'light'
+		);
+	`)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
@@ -107,8 +107,8 @@ func initDB() {
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
-             VALUES ('admin', 'admin123', 'System Admin', 'admin') 
-             ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
+			 VALUES ('admin', 'admin123', 'System Admin', 'admin') 
+			 ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
 }
 
 // --- UTILITIES ---
@@ -200,6 +200,49 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
+
+// --- PASSWORD RECOVERY HANDLERS ---
+
+func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		tmpl, _ := template.ParseFiles("forgot_password.html")
+		tmpl.Execute(w, nil)
+		return
+	}
+
+	username := r.FormValue("username")
+	var u User
+	err := db.QueryRow("SELECT username FROM users WHERE username=$1", username).Scan(&u.Username)
+	if err != nil {
+		http.Redirect(w, r, "/forgot?error=usernotfound", http.StatusSeeOther)
+		return
+	}
+
+	tmpl, _ := template.ParseFiles("reset.html")
+	tmpl.Execute(w, u)
+}
+
+func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		username := r.FormValue("username")
+		answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
+		newPass := r.FormValue("new_password")
+
+		var dbAnswer string
+		err := db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
+
+		if err == nil && dbAnswer == answer {
+			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
+			if err == nil {
+				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
+				return
+			}
+		}
+	}
+	http.Redirect(w, r, "/reset-password?error=invalid", http.StatusSeeOther)
+}
+
+// --- PRODUCT & PROFILE HANDLERS ---
 
 func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query("SELECT id, username, display_name, role, profile_pic FROM users ORDER BY id ASC")
@@ -388,6 +431,10 @@ func main() {
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/", checkAuth(homeHandler))
+
+	// PASSWORD RECOVERY ROUTES
+	http.HandleFunc("/forgot", forgotPasswordHandler)
+	http.HandleFunc("/reset-password", resetPasswordHandler)
 
 	// USER MANAGEMENT ROUTES
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))

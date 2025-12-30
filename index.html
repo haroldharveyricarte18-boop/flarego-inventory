@@ -18,6 +18,7 @@
             --card-bg: #ffffff;
             --text-main: #1e293b;
             --text-muted: #64748b;
+            --border: #e2e8f0;
         }
 
         body { 
@@ -221,7 +222,7 @@
         .product-row {
             display: grid;
             grid-template-columns: 2fr 1fr 1fr 200px; 
-            padding: 20px 24px;
+            padding: 16px 24px;
             align-items: center;
             border-bottom: 1px solid #f1f5f9;
             transition: all 0.2s ease;
@@ -279,6 +280,36 @@
         }
         .btn-view-all:hover {
             background: #f1f5f9;
+        }
+
+        /* Pagination Styles */
+        .pagination-footer {
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fff;
+            border-top: 1px solid #f1f5f9;
+        }
+        .btn-pagination {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: white;
+            font-weight: 700;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-main);
+        }
+        .btn-pagination:hover:not(:disabled) {
+            background: var(--bg);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .btn-pagination:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -408,34 +439,12 @@
                 </div>
 
                 <div id="inventory-list">
-                    {{range .Products}}
-                    <div class="product-row">
-                        <div>
-                            <div style="font-weight: 700; color: var(--dark);">{{.Name}}</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">{{.Desc}}</div>
-                        </div>
-                        <div>
-                            <span class="status-badge {{if le .NumericStock 0}}status-critical{{else if le .NumericStock 5}}status-low{{else}}status-ok{{end}}">
-                                {{.Stock}} Units
-                            </span>
-                        </div>
-                        <div style="font-weight: 800;">₱{{.Price}}</div>
-                        
-                        <div class="product-actions">
-                            <form action="/sell" method="POST" style="margin:0;">
-                                <input type="hidden" name="id" value="{{.ID}}">
-                                <button type="submit" class="btn-sell" {{if le .NumericStock 0}}disabled title="Out of Stock"{{end}}>💰 SELL</button>
-                            </form>
-                            
-                            {{ if eq $.User.Role "admin" }}
-                            <a href="/?edit={{.ID}}" style="color: var(--primary); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
-                            <a href="/delete?id={{.ID}}" onclick="return confirm('Delete this product?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>
-                            {{ end }}
-                        </div>
                     </div>
-                    {{else}}
-                    <div style="padding: 60px; text-align: center; color: var(--text-muted);">No products found.</div>
-                    {{end}}
+
+                <div class="pagination-footer">
+                    <button class="btn-pagination" id="prevBtn" onclick="changePage(-1)">← Previous</button>
+                    <span id="pageIndicator" style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Page 1 of 1</span>
+                    <button class="btn-pagination" id="nextBtn" onclick="changePage(1)">Next →</button>
                 </div>
             </div>
 
@@ -466,6 +475,91 @@
     </div>
 
     <script>
+        // Global variables for pagination
+        let currentPage = 1;
+        const itemsPerPage = 8;
+        let filteredProducts = [];
+
+        // 1. DATA PREPARATION: Pass Go products to JS
+        const allProducts = [
+            {{range .Products}}
+            {
+                id: "{{.ID}}",
+                name: "{{.Name}}",
+                desc: "{{.Desc}}",
+                stock: {{.NumericStock}},
+                displayStock: "{{.Stock}}",
+                price: "{{.Price}}"
+            },
+            {{end}}
+        ];
+
+        filteredProducts = [...allProducts];
+
+        // 2. RENDERING LOGIC
+        function renderInventory() {
+            const list = document.getElementById('inventory-list');
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageItems = filteredProducts.slice(startIndex, endIndex);
+
+            if (pageItems.length === 0) {
+                list.innerHTML = `<div style="padding: 60px; text-align: center; color: var(--text-muted);">No products found.</div>`;
+            } else {
+                list.innerHTML = pageItems.map(p => `
+                    <div class="product-row">
+                        <div>
+                            <div style="font-weight: 700; color: var(--dark);">${p.name}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">${p.desc}</div>
+                        </div>
+                        <div>
+                            <span class="status-badge ${p.stock <= 0 ? 'status-critical' : p.stock <= 5 ? 'status-low' : 'status-ok'}">
+                                ${p.displayStock} Units
+                            </span>
+                        </div>
+                        <div style="font-weight: 800;">₱${p.price}</div>
+                        
+                        <div class="product-actions">
+                            <form action="/sell" method="POST" style="margin:0;">
+                                <input type="hidden" name="id" value="${p.id}">
+                                <button type="submit" class="btn-sell" ${p.stock <= 0 ? 'disabled title="Out of Stock"' : ''}>💰 SELL</button>
+                            </form>
+                            
+                            {{ if eq $.User.Role "admin" }}
+                            <a href="/?edit=${p.id}" style="color: var(--primary); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
+                            <a href="/delete?id=${p.id}" onclick="return confirm('Delete this product?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>
+                            {{ end }}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Update Page Indicator
+            const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+            document.getElementById('pageIndicator').innerText = `Page ${currentPage} of ${totalPages}`;
+            
+            // Update Buttons
+            document.getElementById('prevBtn').disabled = currentPage === 1;
+            document.getElementById('nextBtn').disabled = currentPage === totalPages;
+        }
+
+        function changePage(dir) {
+            currentPage += dir;
+            renderInventory();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 3. SEARCH LOGIC
+        document.getElementById('posSearch').addEventListener('input', function(e) {
+            const term = e.target.value.toLowerCase();
+            filteredProducts = allProducts.filter(p => 
+                p.name.toLowerCase().includes(term) || p.desc.toLowerCase().includes(term)
+            );
+            currentPage = 1; // Reset to page 1 on search
+            renderInventory();
+        });
+
+        // 4. UI HELPERS
         function toggleForm() {
             const f = document.getElementById('form-content');
             if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
@@ -482,14 +576,7 @@
             if (dropdown) dropdown.style.display = 'none';
         }
 
-        document.getElementById('posSearch').addEventListener('input', function(e) {
-            const term = e.target.value.toLowerCase();
-            document.querySelectorAll('.product-row').forEach(row => {
-                const text = row.innerText.toLowerCase();
-                row.style.display = text.includes(term) ? 'grid' : 'none';
-            });
-        });
-
+        // 5. CHART LOGIC
         const healthScore = Number("{{.HealthScore}}") || 0;
         let chartColor = '#6366f1';
         if (healthScore < 30) chartColor = '#ef4444';
@@ -508,6 +595,9 @@
             },
             options: { cutout: '75%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
         });
+
+        // Initial Load
+        renderInventory();
     </script>
 </body>
 </html>

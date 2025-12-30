@@ -66,7 +66,7 @@
             padding: 2px 6px;
             border-radius: 10px;
             border: 2px solid white;
-            display: none; /* Hidden by default */
+            display: none;
         }
 
         .notif-dropdown {
@@ -134,7 +134,7 @@
             position: absolute;
             top: 100%;
             right: 0;
-            width: 200px;
+            width: 220px;
             background: white;
             border-radius: 12px;
             box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
@@ -330,9 +330,7 @@
             align-items: center;
         }
 
-        .product-row:hover .product-actions {
-            opacity: 1;
-        }
+        .product-row:hover .product-actions { opacity: 1; }
 
         .status-badge {
             padding: 6px 12px;
@@ -478,6 +476,7 @@
                         {{ if eq .User.Role "admin" }}
                         <a href="/users">👥 User Management</a>
                         <a href="/audit">📜 Audit Trail</a>
+                        <a href="/settings#broadcast" style="border-top: 1px solid #f1f5f9;">🛠️ Broadcast Update</a>
                         {{ end }}
                         <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
                         <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
@@ -485,22 +484,6 @@
                 </div>
             </div>
         </div>
-
-        {{ if eq .User.Role "admin" }}
-        <div class="card" style="margin-bottom: 30px; border-left: 5px solid var(--primary); background: #fcfdfe;">
-            <div style="padding: 24px;">
-                <h3 style="margin-top:0; font-size: 1.1rem; color: var(--dark); display: flex; align-items: center; gap: 8px;">
-                    🛠️ Admin Settings: Broadcast System Update
-                </h3>
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 15px;">Send a real-time notification to all logged-in staff members.</p>
-                <div style="display: flex; gap: 12px;">
-                    <input type="text" id="broadcastTitle" placeholder="Update Title (e.g. Schedule Change)" style="flex: 1;">
-                    <input type="text" id="broadcastMsg" placeholder="Message to all staff..." style="flex: 2;">
-                    <button id="broadcastBtn" onclick="sendBroadcast()" class="btn btn-primary" style="white-space: nowrap;">Post Update</button>
-                </div>
-            </div>
-        </div>
-        {{ end }}
 
         <div class="stats-grid">
             <div class="stat-card" style="display: flex; align-items: center; gap: 15px;">
@@ -663,13 +646,11 @@
                             </span>
                         </div>
                         <div style="font-weight: 800;">₱${p.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        
                         <div class="product-actions">
                             <form action="/sell" method="POST" style="margin:0;">
                                 <input type="hidden" name="id" value="${p.id}">
                                 <button type="submit" class="btn-sell" ${p.stock <= 0 ? 'disabled title="Out of Stock"' : ''}>💰 SELL</button>
                             </form>
-                            
                             {{ if eq $.User.Role "admin" }}
                             <a href="/?edit=${p.id}" style="color: var(--primary); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
                             <a href="/delete?id=${p.id}" onclick="return confirm('Delete this product?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>
@@ -683,22 +664,15 @@
             document.getElementById('pageIndicator').innerText = `Page ${currentPage} of ${totalPages}`;
             document.getElementById('prevBtn').disabled = currentPage === 1;
             document.getElementById('nextBtn').disabled = currentPage === totalPages;
-            document.getElementById('jumpPageInput').max = totalPages;
         }
 
-        // --- Notification UI Handlers ---
         function toggleNotifDropdown(e) {
             e.stopPropagation();
             const d = document.getElementById('notifDropdown');
             const p = document.getElementById('profileDropdown');
             if(p) p.style.display = 'none';
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
-            
-            // Reset badge on open
-            if(d.style.display === 'block') {
-                unreadCount = 0;
-                updateBadge();
-            }
+            if(d.style.display === 'block') { unreadCount = 0; updateBadge(); }
         }
 
         function toggleProfileDropdown(e) {
@@ -709,7 +683,6 @@
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
         }
 
-        // Close dropdowns on click outside
         window.onclick = function(event) {
             if (!event.target.closest('.notif-wrapper') && !event.target.closest('.user-section')) {
                 document.getElementById('notifDropdown').style.display = 'none';
@@ -721,16 +694,10 @@
             const list = document.getElementById('notifList');
             const empty = document.getElementById('notifEmptyState');
             if(empty) empty.remove();
-
             const item = document.createElement('div');
             item.className = 'notif-item unread';
-            item.innerHTML = `
-                <strong style="font-size: 0.85rem; display: block;">${title}</strong>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
-                <span class="time">Just now</span>
-            `;
+            item.innerHTML = `<strong style="font-size: 0.85rem; display: block;">${title}</strong><span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span><span class="time">Just now</span>`;
             list.prepend(item);
-            
             unreadCount++;
             updateBadge();
         }
@@ -741,145 +708,18 @@
             badge.style.display = unreadCount > 0 ? 'block' : 'none';
         }
 
-        function clearNotifications() {
-            document.getElementById('notifList').innerHTML = `<div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>`;
-            unreadCount = 0;
-            updateBadge();
-        }
-
-        // --- REAL-TIME LISTENER ---
         const evtSource = new EventSource("/events");
         evtSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
             addNotification(data.title, data.message);
         };
 
-        // --- BROADCAST LOGIC ---
-        async function sendBroadcast() {
-            const titleInput = document.getElementById('broadcastTitle');
-            const msgInput = document.getElementById('broadcastMsg');
-            const btn = document.getElementById('broadcastBtn');
-            
-            const title = titleInput.value;
-            const message = msgInput.value;
-
-            if(!title || !message) return alert("Please fill in both fields");
-
-            btn.disabled = true;
-            btn.innerText = "Broadcasting...";
-
-            const formData = new FormData();
-            formData.append('title', title);
-            formData.append('message', message);
-
-            try {
-                const response = await fetch('/api/send-notification', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (response.ok) {
-                    titleInput.value = '';
-                    msgInput.value = '';
-                    alert("Broadcast sent successfully!");
-                } else {
-                    const errText = await response.text();
-                    alert("Failed: " + errText);
-                }
-            } catch (err) {
-                alert("Connection error.");
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "Post Update";
-            }
-        }
-
-        // --- Sorting & Pagination ---
-        function toggleSort(col) {
-            if (sortState.column === col) {
-                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortState.column = col;
-                sortState.direction = 'asc';
-            }
-
-            ['name', 'stock', 'price'].forEach(c => {
-                const icon = document.getElementById(`sort-${c}`);
-                if (c === col) {
-                    icon.innerText = sortState.direction === 'asc' ? '↑' : '↓';
-                } else {
-                    icon.innerText = '↕';
-                }
-            });
-
-            filteredProducts.sort((a, b) => {
-                let valA = a[col];
-                let valB = b[col];
-                if (typeof valA === 'string') valA = valA.toLowerCase();
-                if (typeof valB === 'string') valB = valB.toLowerCase();
-                if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
-                if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-
-            currentPage = 1;
-            renderInventory();
-        }
-
-        function handleJump(e) {
-            if (e.key === 'Enter') {
-                const pageNum = parseInt(e.target.value);
-                const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
-                if (pageNum >= 1 && pageNum <= totalPages) {
-                    currentPage = pageNum;
-                    renderInventory();
-                    e.target.value = '';
-                } else {
-                    alert("Invalid Page Number");
-                }
-            }
-        }
-
-        function changePage(dir) {
-            const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
-            const newPage = currentPage + dir;
-            if (newPage >= 1 && newPage <= totalPages) {
-                currentPage = newPage;
-                renderInventory();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
-
-        document.getElementById('posSearch').addEventListener('input', function(e) {
-            const term = e.target.value.toLowerCase();
-            filteredProducts = allProducts.filter(p => 
-                p.name.toLowerCase().includes(term) || p.desc.toLowerCase().includes(term)
-            );
-            currentPage = 1; 
-            renderInventory();
-        });
-
         function toggleForm() {
             const f = document.getElementById('form-content');
-            if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
         }
 
-        // Initial render
         renderInventory();
-
-        // Chart Init
-        const ctx = document.getElementById('healthChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                datasets: [{
-                    data: [{{.HealthScore}}, 100 - {{.HealthScore}}],
-                    backgroundColor: ['#6366f1', '#e2e8f0'],
-                    borderWidth: 0
-                }]
-            },
-            options: { cutout: '75%', plugins: { tooltip: { enabled: false } } }
-        });
     </script>
 </body>
 </html>

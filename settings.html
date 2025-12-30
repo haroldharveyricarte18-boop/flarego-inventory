@@ -15,6 +15,7 @@
             --muted: #64748b;
             --border: #e2e8f0;
             --danger: #ef4444;
+            --success: #10b981;
         }
 
         body { 
@@ -26,6 +27,7 @@
             align-items: center; 
             min-height: 100vh; 
             margin: 0; 
+            padding: 20px;
         }
 
         .settings-card {
@@ -36,6 +38,7 @@
             width: 100%;
             max-width: 450px;
             text-align: center;
+            box-sizing: border-box;
         }
 
         .avatar-container {
@@ -49,9 +52,9 @@
             height: 120px;
             border-radius: 50%;
             object-fit: cover;
-            border: 4px solid var(--bg);
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-            background: #eee;
+            border: 4px solid #fff;
+            box-shadow: 0 0 0 1px var(--border), 0 4px 6px -1px rgba(0,0,0,0.1);
+            background: #f1f5f9;
         }
 
         .form-group { text-align: left; margin-bottom: 24px; }
@@ -89,7 +92,7 @@
             color: var(--muted);
         }
 
-        /* Modern file input hack */
+        /* Modern file input styling */
         input[type="file"]::file-selector-button {
             padding: 8px 16px;
             border-radius: 8px;
@@ -98,11 +101,13 @@
             cursor: pointer;
             margin-right: 12px;
             font-weight: 600;
-            transition: background 0.2s;
+            font-family: inherit;
+            transition: all 0.2s;
         }
 
         input[type="file"]::file-selector-button:hover {
             background: #f1f5f9;
+            border-color: var(--muted);
         }
 
         .btn-save {
@@ -115,16 +120,23 @@
             font-weight: 700;
             font-size: 1rem;
             cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
+            transition: all 0.2s ease;
         }
 
         .btn-save:hover { 
             background: var(--primary-hover);
             transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
         }
 
         .btn-save:active {
             transform: translateY(0);
+        }
+
+        .btn-save:disabled {
+            background: var(--muted);
+            cursor: not-allowed;
+            transform: none;
         }
 
         .footer-links {
@@ -160,31 +172,45 @@
             opacity: 1;
             text-decoration: underline;
         }
+
+        .alert {
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+            display: none; /* Hidden by default */
+        }
+        .alert-success { background: #ecfdf5; color: var(--success); border: 1px solid #a7f3d0; }
     </style>
 </head>
 <body>
 
 <div class="settings-card">
     <div class="avatar-container">
-        <img src="{{.User.ProfilePic}}" class="avatar-preview" id="preview" alt="Avatar">
+        <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
+             class="avatar-preview" 
+             id="preview" 
+             alt="Avatar">
     </div>
     
-    <h2 style="margin: 0 0 8px 0; font-weight: 800;">Account Settings</h2>
+    <h2 style="margin: 0 0 8px 0; font-weight: 800; letter-spacing: -0.02em;">Account Settings</h2>
     <p style="color: var(--muted); margin-bottom: 32px; font-size: 0.95rem;">Manage your Flarego ERP profile</p>
 
-    <form action="/update-profile" method="POST" enctype="multipart/form-data">
+    <div id="statusMessage" class="alert alert-success">Changes saved successfully!</div>
+
+    <form id="settingsForm" action="/update-profile" method="POST" enctype="multipart/form-data">
         <div class="form-group">
-            <label>Display Name</label>
-            <input type="text" name="display_name" value="{{.User.DisplayName}}" placeholder="Enter your name" required>
+            <label for="display_name">Display Name</label>
+            <input type="text" id="display_name" name="display_name" value="{{.User.DisplayName}}" placeholder="Enter your name" required>
         </div>
 
         <div class="form-group">
-            <label>Profile Picture</label>
+            <label for="fileInput">Profile Picture</label>
             <input type="file" name="profile_pic_file" id="fileInput" accept="image/png, image/jpeg, image/gif">
             <p style="font-size: 0.75rem; color: var(--muted); margin-top: 8px;">Supports JPG, PNG or GIF. Max 5MB.</p>
         </div>
 
-        <button type="submit" class="btn-save">Save Changes</button>
+        <button type="submit" class="btn-save" id="submitBtn">Save Changes</button>
     </form>
 
     <div class="footer-links">
@@ -194,10 +220,12 @@
 </div>
 
 <script>
-    // Live preview of the selected image
     const fileInput = document.getElementById('fileInput');
     const preview = document.getElementById('preview');
+    const form = document.getElementById('settingsForm');
+    const submitBtn = document.getElementById('submitBtn');
 
+    // Live preview of the selected image
     fileInput.onchange = evt => {
         const [file] = fileInput.files;
         if (file) {
@@ -207,8 +235,29 @@
                 fileInput.value = "";
                 return;
             }
-            preview.src = URL.createObjectURL(file);
+            // Update preview
+            const objectUrl = URL.createObjectURL(file);
+            preview.src = objectUrl;
+            
+            // Free memory when image is loaded
+            preview.onload = () => URL.revokeObjectURL(objectUrl);
         }
+    }
+
+    // Handle form submission UI
+    form.onsubmit = () => {
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Saving Changes...";
+    }
+
+    // Optional: Show success message if URL has success param
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('success')) {
+        document.getElementById('statusMessage').style.display = 'block';
+        setTimeout(() => {
+            document.getElementById('statusMessage').style.opacity = '0';
+            document.getElementById('statusMessage').style.transition = 'opacity 0.5s';
+        }, 3000);
     }
 </script>
 

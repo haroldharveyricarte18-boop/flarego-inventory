@@ -219,6 +219,30 @@
             align-items: center;
         }
 
+        /* Sorting Header Styles */
+        .sorting-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 200px;
+            padding: 10px 24px;
+            background: #fcfdfe;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 800;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+        }
+
+        .sort-btn {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s;
+        }
+
+        .sort-btn:hover { color: var(--primary); }
+
         .product-row {
             display: grid;
             grid-template-columns: 2fr 1fr 1fr 200px; 
@@ -282,7 +306,7 @@
             background: #f1f5f9;
         }
 
-        /* Pagination Styles */
+        /* Pagination Footer Updated */
         .pagination-footer {
             padding: 16px 24px;
             display: flex;
@@ -291,6 +315,25 @@
             background: #fff;
             border-top: 1px solid #f1f5f9;
         }
+        
+        .jump-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .jump-input {
+            width: 50px;
+            padding: 6px;
+            text-align: center;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
         .btn-pagination {
             padding: 8px 16px;
             border-radius: 8px;
@@ -438,13 +481,26 @@
                     <input type="text" id="posSearch" placeholder="Search products..." style="width: 250px;">
                 </div>
 
-                <div id="inventory-list">
-                    </div>
+                <div class="sorting-row">
+                    <div class="sort-btn" onclick="toggleSort('name')">Product Name <span id="sort-name">↕</span></div>
+                    <div class="sort-btn" onclick="toggleSort('stock')">Stock <span id="sort-stock">↕</span></div>
+                    <div class="sort-btn" onclick="toggleSort('price')">Price <span id="sort-price">↕</span></div>
+                    <div style="text-align: right;">Actions</div>
+                </div>
+
+                <div id="inventory-list"></div>
 
                 <div class="pagination-footer">
-                    <button class="btn-pagination" id="prevBtn" onclick="changePage(-1)">← Previous</button>
-                    <span id="pageIndicator" style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Page 1 of 1</span>
-                    <button class="btn-pagination" id="nextBtn" onclick="changePage(1)">Next →</button>
+                    <div>
+                        <button class="btn-pagination" id="prevBtn" onclick="changePage(-1)">← Previous</button>
+                        <span id="pageIndicator" style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin: 0 10px;">Page 1 of 1</span>
+                        <button class="btn-pagination" id="nextBtn" onclick="changePage(1)">Next →</button>
+                    </div>
+                    
+                    <div class="jump-container">
+                        Jump to Page: 
+                        <input type="number" id="jumpPageInput" class="jump-input" min="1" onkeypress="handleJump(event)">
+                    </div>
                 </div>
             </div>
 
@@ -475,12 +531,11 @@
     </div>
 
     <script>
-        // Global variables for pagination
         let currentPage = 1;
         const itemsPerPage = 8;
         let filteredProducts = [];
+        let sortState = { column: null, direction: 'asc' };
 
-        // 1. DATA PREPARATION: Pass Go products to JS
         const allProducts = [
             {{range .Products}}
             {
@@ -489,14 +544,13 @@
                 desc: "{{.Desc}}",
                 stock: {{.NumericStock}},
                 displayStock: "{{.Stock}}",
-                price: "{{.Price}}"
+                price: parseFloat("{{.Price}}".replace(/,/g, ''))
             },
             {{end}}
         ];
 
         filteredProducts = [...allProducts];
 
-        // 2. RENDERING LOGIC
         function renderInventory() {
             const list = document.getElementById('inventory-list');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -517,7 +571,7 @@
                                 ${p.displayStock} Units
                             </span>
                         </div>
-                        <div style="font-weight: 800;">₱${p.price}</div>
+                        <div style="font-weight: 800;">₱${p.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                         
                         <div class="product-actions">
                             <form action="/sell" method="POST" style="margin:0;">
@@ -534,13 +588,58 @@
                 `).join('');
             }
 
-            // Update Page Indicator
             const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
             document.getElementById('pageIndicator').innerText = `Page ${currentPage} of ${totalPages}`;
-            
-            // Update Buttons
             document.getElementById('prevBtn').disabled = currentPage === 1;
             document.getElementById('nextBtn').disabled = currentPage === totalPages;
+            document.getElementById('jumpPageInput').max = totalPages;
+        }
+
+        function toggleSort(col) {
+            if (sortState.column === col) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.column = col;
+                sortState.direction = 'asc';
+            }
+
+            // Update UI icons
+            ['name', 'stock', 'price'].forEach(c => {
+                const icon = document.getElementById(`sort-${c}`);
+                if (c === col) {
+                    icon.innerText = sortState.direction === 'asc' ? '↑' : '↓';
+                } else {
+                    icon.innerText = '↕';
+                }
+            });
+
+            filteredProducts.sort((a, b) => {
+                let valA = a[col];
+                let valB = b[col];
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                
+                if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            currentPage = 1;
+            renderInventory();
+        }
+
+        function handleJump(e) {
+            if (e.key === 'Enter') {
+                const pageNum = parseInt(e.target.value);
+                const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+                if (pageNum >= 1 && pageNum <= totalPages) {
+                    currentPage = pageNum;
+                    renderInventory();
+                    e.target.value = '';
+                } else {
+                    alert("Invalid Page Number");
+                }
+            }
         }
 
         function changePage(dir) {
@@ -549,17 +648,15 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // 3. SEARCH LOGIC
         document.getElementById('posSearch').addEventListener('input', function(e) {
             const term = e.target.value.toLowerCase();
             filteredProducts = allProducts.filter(p => 
                 p.name.toLowerCase().includes(term) || p.desc.toLowerCase().includes(term)
             );
-            currentPage = 1; // Reset to page 1 on search
+            currentPage = 1; 
             renderInventory();
         });
 
-        // 4. UI HELPERS
         function toggleForm() {
             const f = document.getElementById('form-content');
             if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
@@ -576,7 +673,6 @@
             if (dropdown) dropdown.style.display = 'none';
         }
 
-        // 5. CHART LOGIC
         const healthScore = Number("{{.HealthScore}}") || 0;
         let chartColor = '#6366f1';
         if (healthScore < 30) chartColor = '#ef4444';
@@ -596,7 +692,6 @@
             options: { cutout: '75%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
         });
 
-        // Initial Load
         renderInventory();
     </script>
 </body>

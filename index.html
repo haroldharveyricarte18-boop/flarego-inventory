@@ -93,7 +93,9 @@
 
         .notif-item:hover { background: #f8fafc; }
         .notif-item.unread { border-left: 4px solid var(--primary); background: #f5f7ff; }
-        .notif-item .time { font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 4px; }
+        .notif-item .title { font-weight: 700; font-size: 0.85rem; display: block; margin-bottom: 2px; }
+        .notif-item .message { font-size: 0.8rem; color: var(--text-muted); display: block; }
+        .notif-item .time { font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 6px; }
 
         /* User Section */
         .user-section {
@@ -451,7 +453,7 @@
             <div style="display: flex; gap: 24px; align-items: center;">
                 <div style="display: flex; gap: 12px;">
                     {{ if eq .User.Role "admin" }}
-                    <a href="/export" class="btn btn-outline">📥 Export CSV</a>
+                    <a href="/export" class="btn btn-outline" target="_blank">📥 Export CSV</a>
                     <button onclick="toggleForm()" class="btn btn-primary">➕ New Product</button>
                     {{ end }}
                 </div>
@@ -463,10 +465,10 @@
                     <div id="notifDropdown" class="notif-dropdown">
                         <div style="padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                             <strong style="font-size: 0.9rem;">Notifications</strong>
-                            <a href="javascript:void(0)" onclick="clearNotifications()" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Clear all</a>
+                            <a href="javascript:void(0)" onclick="clearNotificationsUI()" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Clear view</a>
                         </div>
                         <div id="notifList">
-                            <div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>
+                            <div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No notifications</div>
                         </div>
                     </div>
                 </div>
@@ -482,11 +484,11 @@
                          onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
-                        <a href="/settings">⚙️ Profile Settings</a>
+                        <a href="/settings" target="_blank">⚙️ Profile Settings</a>
                         {{ if eq .User.Role "admin" }}
                         <a href="javascript:void(0)" onclick="toggleBroadcast()" style="background: #f5f7ff; color: var(--primary);">📢 Broadcast System</a>
-                        <a href="/users">👥 User Management</a>
-                        <a href="/audit">📜 Audit Trail</a>
+                        <a href="/users" target="_blank">👥 User Management</a>
+                        <a href="/audit" target="_blank">📜 Audit Trail</a>
                         {{ end }}
                         <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
                         <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
@@ -619,7 +621,7 @@
                     {{end}}
                 </div>
                 {{ if eq .User.Role "admin" }}
-                <a href="/audit" class="btn-view-all">VIEW ALL HISTORY →</a>
+                <a href="/audit" class="btn-view-all" target="_blank">VIEW ALL HISTORY →</a>
                 {{ end }}
             </div>
         </div>
@@ -749,7 +751,84 @@
             renderInventory();
         }
 
-        // --- Notification UI Handlers ---
+        // --- WebSocket & Real-Time Notifications ---
+        const socket = new WebSocket("ws://" + window.location.host + "/ws");
+
+        socket.onmessage = function(event) {
+            const notif = JSON.parse(event.data);
+            addNotifToUI(notif, true);
+            unreadCount++;
+            updateBadge();
+        };
+
+        socket.onclose = function() {
+            console.warn("WebSocket connection closed. Notifications will not be live.");
+        };
+
+        function addNotifToUI(notif, isNew) {
+            const list = document.getElementById('notifList');
+            const emptyState = document.getElementById('notifEmptyState');
+            if (emptyState) emptyState.remove();
+
+            const date = new Date(notif.created_at);
+            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const div = document.createElement('div');
+            div.className = `notif-item ${isNew ? 'unread' : ''}`;
+            div.innerHTML = `
+                <span class="title">${notif.title}</span>
+                <span class="message">${notif.message}</span>
+                <span class="time">${timeStr}</span>
+            `;
+            list.prepend(div);
+        }
+
+        // Fetch past notifications on load
+        async function fetchNotifications() {
+            try {
+                const response = await fetch('/notifications');
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    const emptyState = document.getElementById('notifEmptyState');
+                    if (emptyState) emptyState.remove();
+                    data.reverse().forEach(n => addNotifToUI(n, false));
+                }
+            } catch (err) {
+                console.error("Failed to load notifications history", err);
+            }
+        }
+
+        function postBroadcast() {
+            const title = document.getElementById('bcTitle').value;
+            const message = document.getElementById('bcMessage').value;
+
+            if (!title || !message) {
+                alert("Please fill in both fields");
+                return;
+            }
+
+            fetch('/broadcast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, message })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('bcTitle').value = '';
+                    document.getElementById('bcMessage').value = '';
+                    alert("Broadcast sent!");
+                }
+            });
+        }
+
+        function clearNotificationsUI() {
+            document.getElementById('notifList').innerHTML = '<div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No notifications</div>';
+            unreadCount = 0;
+            updateBadge();
+        }
+
+        // --- Dropdown UI Handlers ---
         function toggleNotifDropdown(e) {
             e.stopPropagation();
             const d = document.getElementById('notifDropdown');
@@ -760,6 +839,8 @@
             if(d.style.display === 'block') {
                 unreadCount = 0;
                 updateBadge();
+                // Mark items as read visually
+                document.querySelectorAll('.notif-item.unread').forEach(el => el.classList.remove('unread'));
             }
         }
 
@@ -788,77 +869,24 @@
             if(panel.style.display === 'block') panel.scrollIntoView({ behavior: 'smooth' });
         }
 
-        function postBroadcast() {
-            const title = document.getElementById('bcTitle').value;
-            const message = document.getElementById('bcMessage').value;
-
-            if(!title || !message) {
-                alert("Please fill in both title and message.");
-                return;
-            }
-
-            fetch('/api/send-notification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}`
-            })
-            .then(res => {
-                if(res.ok) {
-                    alert("Broadcast Sent!");
-                    document.getElementById('bcTitle').value = '';
-                    document.getElementById('bcMessage').value = '';
-                    document.getElementById('broadcast-panel').style.display = 'none';
-                } else {
-                    alert("Error sending broadcast.");
-                }
-            });
-        }
-
-        function addNotification(title, message) {
-            const list = document.getElementById('notifList');
-            const empty = document.getElementById('notifEmptyState');
-            if(empty) empty.remove();
-
-            const item = document.createElement('div');
-            item.className = 'notif-item unread';
-            item.innerHTML = `
-                <strong style="font-size: 0.85rem; display: block;">${title}</strong>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
-                <span class="time">Just now</span>
-            `;
-            list.prepend(item);
-            unreadCount++;
-            updateBadge();
-        }
-
         function updateBadge() {
             const badge = document.getElementById('notifBadge');
             badge.innerText = unreadCount;
             badge.style.display = unreadCount > 0 ? 'block' : 'none';
         }
 
-        function clearNotifications() {
-            document.getElementById('notifList').innerHTML = `<div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>`;
-            unreadCount = 0;
-            updateBadge();
-        }
-
-        // SSE Real-time Updates
-        const eventSource = new EventSource('/events');
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            addNotification(data.title, data.message);
-        };
-
-        // Health Chart
-        window.onload = () => {
+        // Initialize
+        window.onload = function() {
             renderInventory();
+            fetchNotifications();
+            
+            // Stats Chart logic
             const ctx = document.getElementById('healthChart').getContext('2d');
             new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     datasets: [{
-                        data: [{{.HealthScore}}, {{sub 100 .HealthScore}}],
+                        data: [{{.HealthScore}}, 100 - {{.HealthScore}}],
                         backgroundColor: ['#6366f1', '#e2e8f0'],
                         borderWidth: 0
                     }]

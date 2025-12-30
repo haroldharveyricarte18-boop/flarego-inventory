@@ -78,7 +78,6 @@ var hub = Hub{
 	broadcast: make(chan Notification),
 }
 
-// run handles the background loop for pushing messages to active users
 func (h *Hub) run() {
 	for {
 		notif := <-h.broadcast
@@ -115,12 +114,14 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	_, err = db.Exec("SET TIME ZONE 'Asia/Manila';")
-	if err != nil {
-		log.Println("Warning: Could not set database timezone:", err)
+	// Ping to ensure connection is live
+	if err = db.Ping(); err != nil {
+		log.Fatal("Could not connect to database:", err)
 	}
 
-	_, err = db.Exec(`
+	_, _ = db.Exec("SET TIME ZONE 'Asia/Manila';")
+
+	schema := `
         CREATE TABLE IF NOT EXISTS products (
             id SERIAL PRIMARY KEY,
             name TEXT,
@@ -152,19 +153,19 @@ func initDB() {
             title TEXT,
             message TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    `)
+        );`
+
+	_, err = db.Exec(schema)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations
+	// Explicit Migrations for existing tables
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
-	db.Exec("ALTER TABLE users ALTER COLUMN profile_pic TYPE TEXT;")
 
-	// Default Admin
+	// Default Admin (Plain text for now as per your original, but consider bcrypt later)
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
@@ -185,7 +186,7 @@ func logActivity(r *http.Request, action, name, details string) {
 	if err == nil {
 		username = cookie.Value
 	}
-	db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", action, name, details, username)
+	_, _ = db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", action, name, details, username)
 }
 
 func countSalesToday() int {
@@ -214,9 +215,13 @@ func checkAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, _ := r.Cookie("session_token")
+		cookie, err := r.Cookie("session_token")
+		if err != nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 		var role string
-		err := db.QueryRow("SELECT role FROM users WHERE username=$1", cookie.Value).Scan(&role)
+		err = db.QueryRow("SELECT role FROM users WHERE username=$1", cookie.Value).Scan(&role)
 		if err != nil || role != "admin" {
 			http.Error(w, "Access Denied: Admin privileges required.", http.StatusForbidden)
 			return
@@ -230,7 +235,7 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie("session_token")
 	var u User
-	db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
+	_ = db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.ProfilePic, &u.Role)
 
 	var editItem *Product
@@ -244,17 +249,20 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, _ := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
+	rows, err := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
 	defer rows.Close()
 
 	var products []Product
 	var totalValue, totalProfit float64
-	var totalStockItems int
-	var lowStockCount int
+	var totalStockItems, lowStockCount int
 
 	for rows.Next() {
 		var p Product
-		rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
+		_ = rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
 		p.NumericStock = p.GetNumericStock()
 		sellPrice := parsePrice(p.Price)
 		totalValue += sellPrice * float64(p.NumericStock)
@@ -273,23 +281,32 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
-	for logRows.Next() {
+	for logRows != nil && logRows.Next() {
 		var l ActivityLog
-		logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
+		_ = logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
 		logs = append(logs, l)
 	}
-	logRows.Close()
+	if logRows != nil {
+		logRows.Close()
+	}
 
 	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
 	var notifs []Notification
-	for notifRows.Next() {
+	for notifRows != nil && notifRows.Next() {
 		var n Notification
-		notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+		_ = notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
 		notifs = append(notifs, n)
 	}
-	notifRows.Close()
+	if notifRows != nil {
+		notifRows.Close()
+	}
 
-	tmpl, _ := template.New("index.html").Funcs(template.FuncMap{"sub": sub}).ParseFiles("index.html")
+	tmpl, err := template.New("index.html").Funcs(template.FuncMap{"sub": sub}).ParseFiles("index.html")
+	if err != nil {
+		http.Error(w, "Template error: "+err.Error(), 500)
+		return
+	}
+
 	data := map[string]interface{}{
 		"User":            u,
 		"Products":        products,
@@ -318,7 +335,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&dbPassword)
 	if err == nil && password == dbPassword {
 		http.SetCookie(w, &http.Cookie{Name: "session_token", Value: username, Path: "/", HttpOnly: true})
-		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Login", "Account", "User signed in", username)
+		logActivity(r, "Login", "Account", "User signed in")
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
@@ -339,17 +356,14 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := db.Exec("INSERT INTO users (username, password, display_name, secret_answer) VALUES ($1, $2, $3, $4)",
 		username, password, displayName, secret)
 	if err != nil {
-		http.Error(w, "User already exists", http.StatusConflict)
+		http.Error(w, "Registration failed or user already exists", http.StatusConflict)
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session_token")
-	if err == nil {
-		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Logout", "Account", "User signed out", cookie.Value)
-	}
+	logActivity(r, "Logout", "Account", "User signed out")
 	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
@@ -364,11 +378,15 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 		stock := r.FormValue("stock")
 
 		if id != "" {
-			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6", name, price, cost, desc, stock, id)
-			logActivity(r, "Updated", name, "Product info modified")
+			_, err := db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6", name, price, cost, desc, stock, id)
+			if err == nil {
+				logActivity(r, "Updated", name, "Product info modified")
+			}
 		} else {
-			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)", name, price, cost, desc, stock)
-			logActivity(r, "Added", name, "New product created")
+			_, err := db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)", name, price, cost, desc, stock)
+			if err == nil {
+				logActivity(r, "Added", name, "New product created")
+			}
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -378,11 +396,13 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		id := r.FormValue("id")
 		var name string
-		db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
-		res, _ := db.Exec("UPDATE products SET stock = (stock::int - 1)::text WHERE id=$1 AND stock::int > 0", id)
-		count, _ := res.RowsAffected()
-		if count > 0 {
-			logActivity(r, "Sale", name, "Sold 1 unit")
+		err := db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
+		if err == nil {
+			res, _ := db.Exec("UPDATE products SET stock = (stock::int - 1)::text WHERE id=$1 AND stock::int > 0", id)
+			count, _ := res.RowsAffected()
+			if count > 0 {
+				logActivity(r, "Sale", name, "Sold 1 unit")
+			}
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -391,32 +411,32 @@ func sellHandler(w http.ResponseWriter, r *http.Request) {
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	var name string
-	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
-	db.Exec("DELETE FROM products WHERE id=$1", id)
-	logActivity(r, "Deleted", name, "Product removed from inventory")
+	_ = db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
+	_, err := db.Exec("DELETE FROM products WHERE id=$1", id)
+	if err == nil {
+		logActivity(r, "Deleted", name, "Product removed from inventory")
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie("session_token")
-	r.ParseMultipartForm(5 << 20)
+	_ = r.ParseMultipartForm(5 << 20)
 	displayName := r.FormValue("display_name")
 
 	file, _, err := r.FormFile("profile_pic_file")
 	if err == nil {
 		defer file.Close()
-		fileBytes, err := io.ReadAll(file)
-		if err == nil {
-			mimeType := http.DetectContentType(fileBytes)
-			header := "data:" + mimeType + ";base64,"
-			encoded := base64.StdEncoding.EncodeToString(fileBytes)
-			fullBase64 := header + encoded
-			db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
-			logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
-		}
+		fileBytes, _ := io.ReadAll(file)
+		mimeType := http.DetectContentType(fileBytes)
+		header := "data:" + mimeType + ";base64,"
+		encoded := base64.StdEncoding.EncodeToString(fileBytes)
+		fullBase64 := header + encoded
+		_, _ = db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
+		logActivity(r, "Profile Update", "Avatar", "User updated profile picture")
 	} else {
-		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
-		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
+		_, _ = db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
+		logActivity(r, "Profile Update", "Display Name", "User changed display name")
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -432,7 +452,7 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	for rows.Next() {
 		var u User
-		rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.ProfilePic)
+		_ = rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.ProfilePic)
 		users = append(users, u)
 	}
 
@@ -444,7 +464,7 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	newRole := r.URL.Query().Get("role")
 	var targetUser string
-	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
+	_ = db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
 	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
 	if err != nil {
 		http.Error(w, "Update failed", 500)
@@ -459,23 +479,26 @@ func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	endDate := r.URL.Query().Get("end")
 	query := `SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
               FROM activity_logs l LEFT JOIN users u ON l.user_name = u.username`
+
 	var args []interface{}
 	if startDate != "" && endDate != "" {
 		query += " WHERE l.created_at::date BETWEEN $1 AND $2"
 		args = append(args, startDate, endDate)
 	}
 	query += " ORDER BY l.created_at DESC"
+
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
 	defer rows.Close()
+
 	var logs []ActivityLog
 	for rows.Next() {
 		var l ActivityLog
 		var pic sql.NullString
-		rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
+		_ = rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
 		if pic.Valid {
 			l.UserProfilePic = pic.String
 		} else {
@@ -497,23 +520,29 @@ func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
 		args = append(args, startDate, endDate)
 	}
 	query += " ORDER BY created_at DESC"
-	rows, _ := db.Query(query, args...)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		http.Error(w, "Export failed", 500)
+		return
+	}
 	defer rows.Close()
+
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment;filename=audit.csv")
 	writer := csv.NewWriter(w)
-	writer.Write([]string{"Timestamp", "User", "Action", "Product", "Details"})
+	_ = writer.Write([]string{"Timestamp", "User", "Action", "Product", "Details"})
 	for rows.Next() {
 		var ts time.Time
 		var u, a, p, d string
-		rows.Scan(&ts, &u, &a, &p, &d)
-		writer.Write([]string{ts.Local().Format("2006-01-02 15:04:05"), u, a, p, d})
+		_ = rows.Scan(&ts, &u, &a, &p, &d)
+		_ = writer.Write([]string{ts.Local().Format("2006-01-02 15:04:05"), u, a, p, d})
 	}
 	writer.Flush()
 }
 
 func deleteAllAuditHandler(w http.ResponseWriter, r *http.Request) {
-	db.Exec("DELETE FROM activity_logs")
+	_, _ = db.Exec("DELETE FROM activity_logs")
 	logActivity(r, "System", "Audit Trail", "Admin cleared all activity logs")
 	http.Redirect(w, r, "/audit", http.StatusSeeOther)
 }
@@ -548,10 +577,10 @@ func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
 	newPass := r.FormValue("new_password")
 	var dbAnswer string
-	db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
-	if dbAnswer == answer {
-		db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
-		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
+	_ = db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
+	if dbAnswer != "" && dbAnswer == answer {
+		_, _ = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
+		logActivity(r, "Security", "Password", "User reset their password via secret answer")
 		http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/forgot?username="+username+"&error=invalid", http.StatusSeeOther)
@@ -563,17 +592,20 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment;filename=inventory.csv")
 	writer := csv.NewWriter(w)
 	rows, _ := db.Query("SELECT name, price, stock FROM products")
-	writer.Write([]string{"Name", "Price", "Stock"})
-	for rows.Next() {
-		var n, p, s string
-		rows.Scan(&n, &p, &s)
-		writer.Write([]string{n, p, s})
+	if rows != nil {
+		defer rows.Close()
+		_ = writer.Write([]string{"Name", "Price", "Stock"})
+		for rows.Next() {
+			var n, p, s string
+			_ = rows.Scan(&n, &p, &s)
+			_ = writer.Write([]string{n, p, s})
+		}
 	}
 	writer.Flush()
 	logActivity(r, "Export", "Inventory CSV", "Admin exported the product list")
 }
 
-// --- NEW BROADCAST LOGIC ---
+// --- BROADCAST LOGIC ---
 
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl, _ := template.ParseFiles("broadcast.html")
@@ -607,39 +639,54 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	hub.mutex.Lock()
 	hub.clients[conn] = true
 	hub.mutex.Unlock()
+
+	// Keep-alive/Read loop to detect disconnects
+	go func() {
+		defer func() {
+			hub.mutex.Lock()
+			delete(hub.clients, conn)
+			hub.mutex.Unlock()
+			conn.Close()
+		}()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}()
 }
 
 func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
 	rows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
-	defer rows.Close()
 	var notifs []Notification
-	for rows.Next() {
-		var n Notification
-		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
-		notifs = append(notifs, n)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var n Notification
+			_ = rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+			notifs = append(notifs, n)
+		}
 	}
 	if notifs == nil {
 		notifs = []Notification{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(notifs)
+	_ = json.NewEncoder(w).Encode(notifs)
 }
 
 func main() {
 	initDB()
 	defer db.Close()
 
-	// Run WebSocket Hub background worker
 	go hub.run()
 
-	// Public
+	// Routes
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/forgot", forgotPasswordHandler)
 	http.HandleFunc("/reset-password", resetPasswordHandler)
 	http.HandleFunc("/ws", wsHandler)
 
-	// Protected
 	http.HandleFunc("/", checkAuth(homeHandler))
 	http.HandleFunc("/logout", checkAuth(logoutHandler))
 	http.HandleFunc("/sell", checkAuth(sellHandler))
@@ -648,12 +695,11 @@ func main() {
 	http.HandleFunc("/settings", checkAuth(func(w http.ResponseWriter, r *http.Request) {
 		cookie, _ := r.Cookie("session_token")
 		var u User
-		db.QueryRow("SELECT display_name, profile_pic FROM users WHERE username=$1", cookie.Value).Scan(&u.DisplayName, &u.ProfilePic)
+		_ = db.QueryRow("SELECT display_name, profile_pic FROM users WHERE username=$1", cookie.Value).Scan(&u.DisplayName, &u.ProfilePic)
 		tmpl, _ := template.ParseFiles("settings.html")
 		tmpl.Execute(w, map[string]interface{}{"User": u})
 	}))
 
-	// Admin Only
 	http.HandleFunc("/add", checkAuth(adminOnly(addHandler)))
 	http.HandleFunc("/delete", checkAuth(adminOnly(deleteHandler)))
 	http.HandleFunc("/export", checkAuth(adminOnly(exportHandler)))

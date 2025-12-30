@@ -13,8 +13,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	_ "github.com/lib/pq"
 )
 
@@ -55,6 +57,41 @@ type Notification struct {
 	Title     string    `json:"title"`
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// --- WEBSOCKET REAL-TIME HUB ---
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+type Hub struct {
+	clients   map[*websocket.Conn]bool
+	broadcast chan Notification
+	mutex     sync.Mutex
+}
+
+var hub = Hub{
+	clients:   make(map[*websocket.Conn]bool),
+	broadcast: make(chan Notification),
+}
+
+// run handles the background loop for pushing messages to active users
+func (h *Hub) run() {
+	for {
+		notif := <-h.broadcast
+		h.mutex.Lock()
+		for client := range h.clients {
+			err := client.WriteJSON(notif)
+			if err != nil {
+				client.Close()
+				delete(h.clients, client)
+			}
+		}
+		h.mutex.Unlock()
+	}
 }
 
 func (p Product) GetNumericStock() int {
@@ -121,13 +158,13 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations / Schema Updates
+	// Migrations
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 	db.Exec("ALTER TABLE users ALTER COLUMN profile_pic TYPE TEXT;")
 
-	// Create Default Admin
+	// Default Admin
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
@@ -196,7 +233,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.ProfilePic, &u.Role)
 
-	// Handle Edit Item Context
 	var editItem *Product
 	editID := r.URL.Query().Get("edit")
 	if editID != "" {
@@ -208,7 +244,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fetch Products & Metrics
 	rows, _ := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
 	defer rows.Close()
 
@@ -236,7 +271,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		healthScore = 100 - (lowStockCount * 100 / len(products))
 	}
 
-	// Fetch Recent Logs
 	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
 	var logs []ActivityLog
 	for logRows.Next() {
@@ -246,7 +280,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	logRows.Close()
 
-	// Fetch Recent Notifications
 	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
 	var notifs []Notification
 	for notifRows.Next() {
@@ -373,20 +406,16 @@ func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		defer file.Close()
 		fileBytes, err := io.ReadAll(file)
-		if err != nil {
-			http.Error(w, "Failed to read image", 500)
-			return
+		if err == nil {
+			mimeType := http.DetectContentType(fileBytes)
+			header := "data:" + mimeType + ";base64,"
+			encoded := base64.StdEncoding.EncodeToString(fileBytes)
+			fullBase64 := header + encoded
+			db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
+			logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
 		}
-
-		mimeType := http.DetectContentType(fileBytes)
-		header := "data:" + mimeType + ";base64,"
-		encoded := base64.StdEncoding.EncodeToString(fileBytes)
-		fullBase64 := header + encoded
-
-		_, err = db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
-		logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
 	} else {
-		_, err = db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
+		db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
 		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -414,16 +443,13 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	newRole := r.URL.Query().Get("role")
-
 	var targetUser string
 	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
-
 	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
 	if err != nil {
 		http.Error(w, "Update failed", 500)
 		return
 	}
-
 	logActivity(r, "User Management", targetUser, "Changed role to "+newRole)
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
@@ -431,35 +457,25 @@ func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
 func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
-
-	query := `
-        SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
-        FROM activity_logs l
-        LEFT JOIN users u ON l.user_name = u.username`
-
+	query := `SELECT l.id, l.action, l.product_name, l.details, l.user_name, u.profile_pic, l.created_at 
+              FROM activity_logs l LEFT JOIN users u ON l.user_name = u.username`
 	var args []interface{}
 	if startDate != "" && endDate != "" {
 		query += " WHERE l.created_at::date BETWEEN $1 AND $2"
 		args = append(args, startDate, endDate)
 	}
-
 	query += " ORDER BY l.created_at DESC"
-
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		http.Error(w, "Database error: "+err.Error(), 500)
+		http.Error(w, "Database error", 500)
 		return
 	}
 	defer rows.Close()
-
 	var logs []ActivityLog
 	for rows.Next() {
 		var l ActivityLog
 		var pic sql.NullString
-		err := rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
-		if err != nil {
-			continue
-		}
+		rows.Scan(&l.ID, &l.Action, &l.ProductName, &l.Details, &l.UserName, &pic, &l.CreatedAt)
 		if pic.Valid {
 			l.UserProfilePic = pic.String
 		} else {
@@ -467,41 +483,26 @@ func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		logs = append(logs, l)
 	}
-
 	tmpl, _ := template.ParseFiles("audit.html")
-	tmpl.Execute(w, map[string]interface{}{
-		"Logs":  logs,
-		"Start": startDate,
-		"End":   endDate,
-	})
+	tmpl.Execute(w, map[string]interface{}{"Logs": logs, "Start": startDate, "End": endDate})
 }
 
 func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
 	startDate := r.URL.Query().Get("start")
 	endDate := r.URL.Query().Get("end")
-
 	query := "SELECT created_at, user_name, action, product_name, details FROM activity_logs"
 	var args []interface{}
-
 	if startDate != "" && endDate != "" {
 		query += " WHERE created_at::date BETWEEN $1 AND $2"
 		args = append(args, startDate, endDate)
 	}
 	query += " ORDER BY created_at DESC"
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
+	rows, _ := db.Query(query, args...)
 	defer rows.Close()
-
 	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment;filename=audit_report_%s.csv", time.Now().Format("2006-01-02")))
-
+	w.Header().Set("Content-Disposition", "attachment;filename=audit.csv")
 	writer := csv.NewWriter(w)
 	writer.Write([]string{"Timestamp", "User", "Action", "Product", "Details"})
-
 	for rows.Next() {
 		var ts time.Time
 		var u, a, p, d string
@@ -512,15 +513,7 @@ func exportAuditHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteAllAuditHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
-	_, err := db.Exec("DELETE FROM activity_logs")
-	if err != nil {
-		http.Error(w, "Failed to clear logs", 500)
-		return
-	}
+	db.Exec("DELETE FROM activity_logs")
 	logActivity(r, "System", "Audit Trail", "Admin cleared all activity logs")
 	http.Redirect(w, r, "/audit", http.StatusSeeOther)
 }
@@ -551,26 +544,18 @@ func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		username := r.FormValue("username")
-		answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
-		newPass := r.FormValue("new_password")
-
-		var dbAnswer string
-		err := db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
-
-		if err == nil && dbAnswer == answer {
-			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
-			if err == nil {
-				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
-				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
-				return
-			}
-		}
+	username := r.FormValue("username")
+	answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
+	newPass := r.FormValue("new_password")
+	var dbAnswer string
+	db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
+	if dbAnswer == answer {
+		db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
+		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
+		http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
+	} else {
 		http.Redirect(w, r, "/forgot?username="+username+"&error=invalid", http.StatusSeeOther)
-		return
 	}
-	http.Redirect(w, r, "/forgot", http.StatusSeeOther)
 }
 
 func exportHandler(w http.ResponseWriter, r *http.Request) {
@@ -588,49 +573,54 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 	logActivity(r, "Export", "Inventory CSV", "Admin exported the product list")
 }
 
-func handleSendNotification(w http.ResponseWriter, r *http.Request) {
+// --- NEW BROADCAST LOGIC ---
+
+func broadcastHandler(w http.ResponseWriter, r *http.Request) {
+	tmpl, _ := template.ParseFiles("broadcast.html")
+	tmpl.Execute(w, nil)
+}
+
+func sendBroadcastHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request", 405)
+		http.Redirect(w, r, "/broadcast", http.StatusSeeOther)
 		return
 	}
-
-	title := r.FormValue("title")
+	title := "System Announcement"
 	msg := r.FormValue("message")
-
-	if title == "" || msg == "" {
-		http.Error(w, "Title and Message are required", http.StatusBadRequest)
-		return
-	}
-
-	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
+	var notif Notification
+	err := db.QueryRow("INSERT INTO notifications (title, message) VALUES ($1, $2) RETURNING id, created_at", title, msg).Scan(&notif.ID, &notif.CreatedAt)
 	if err != nil {
-		http.Error(w, "Failed to save broadcast", 500)
+		http.Error(w, "Broadcast failed", 500)
 		return
 	}
+	notif.Title, notif.Message = title, msg
+	hub.broadcast <- notif
+	logActivity(r, "Broadcast", "Global", msg)
+	http.Redirect(w, r, "/broadcast?success=1", http.StatusSeeOther)
+}
 
-	logActivity(r, "Broadcast", "System Update", "Admin sent a message to all staff")
-	w.WriteHeader(http.StatusOK)
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	hub.mutex.Lock()
+	hub.clients[conn] = true
+	hub.mutex.Unlock()
 }
 
 func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
-	if err != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
+	rows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
 	defer rows.Close()
-
 	var notifs []Notification
 	for rows.Next() {
 		var n Notification
 		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
 		notifs = append(notifs, n)
 	}
-
 	if notifs == nil {
 		notifs = []Notification{}
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(notifs)
 }
@@ -639,13 +629,17 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	// Public Routes
+	// Run WebSocket Hub background worker
+	go hub.run()
+
+	// Public
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/forgot", forgotPasswordHandler)
 	http.HandleFunc("/reset-password", resetPasswordHandler)
+	http.HandleFunc("/ws", wsHandler)
 
-	// Protected Routes (All Users)
+	// Protected
 	http.HandleFunc("/", checkAuth(homeHandler))
 	http.HandleFunc("/logout", checkAuth(logoutHandler))
 	http.HandleFunc("/sell", checkAuth(sellHandler))
@@ -659,7 +653,7 @@ func main() {
 		tmpl.Execute(w, map[string]interface{}{"User": u})
 	}))
 
-	// Admin Only Routes
+	// Admin Only
 	http.HandleFunc("/add", checkAuth(adminOnly(addHandler)))
 	http.HandleFunc("/delete", checkAuth(adminOnly(deleteHandler)))
 	http.HandleFunc("/export", checkAuth(adminOnly(exportHandler)))
@@ -668,7 +662,8 @@ func main() {
 	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
 	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
-	http.HandleFunc("/api/send-notification", checkAuth(adminOnly(handleSendNotification)))
+	http.HandleFunc("/broadcast", checkAuth(adminOnly(broadcastHandler)))
+	http.HandleFunc("/send-broadcast", checkAuth(adminOnly(sendBroadcastHandler)))
 
 	port := os.Getenv("PORT")
 	if port == "" {

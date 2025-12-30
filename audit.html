@@ -13,9 +13,8 @@
             --card-bg: #ffffff;
             --text-main: #1e293b;
             --text-muted: #64748b;
-            --success: #10b981;
+            --border: #e2e8f0;
             --danger: #ef4444;
-            --danger-hover: #dc2626;
         }
 
         body { 
@@ -23,6 +22,7 @@
             background: var(--bg); 
             color: var(--text-main); 
             margin: 0; padding: 40px; 
+            line-height: 1.5;
         }
 
         .container { max-width: 1100px; margin: 0 auto; }
@@ -42,13 +42,11 @@
             align-items: flex-end;
         }
 
-        .search-container { position: relative; }
-
         .date-filter-container {
             background: white;
             padding: 10px 15px;
             border-radius: 12px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             display: flex;
             align-items: center;
             gap: 10px;
@@ -59,23 +57,24 @@
             width: 100%;
             padding: 14px 20px;
             border-radius: 12px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             font-family: inherit;
             font-size: 0.95rem;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
             box-sizing: border-box;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
         }
 
-        .search-bar:focus { border-color: var(--primary); }
+        .search-bar:focus { border-color: var(--primary); background: #fff; }
 
         input[type="date"] {
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             padding: 8px;
             border-radius: 6px;
             font-family: inherit;
             color: var(--text-main);
+            outline: none;
         }
 
         .btn-filter {
@@ -86,15 +85,15 @@
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: opacity 0.2s;
         }
 
-        .btn-filter:hover { background: var(--primary-hover); }
+        .btn-filter:hover { opacity: 0.9; }
 
         .btn-export {
             background: #ffffff;
             color: var(--text-main);
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             padding: 9px 16px;
             border-radius: 8px;
             font-weight: 600;
@@ -104,13 +103,9 @@
             gap: 8px;
             font-size: 0.85rem;
             transition: all 0.2s;
-            cursor: pointer;
         }
 
-        .btn-export:hover { 
-            background: #f1f5f9;
-            border-color: #cbd5e1;
-        }
+        .btn-export:hover { background: #f1f5f9; border-color: #cbd5e1; }
 
         .btn-delete-all {
             background: transparent;
@@ -127,105 +122,98 @@
             gap: 6px;
         }
 
-        .btn-delete-all:hover {
-            background: var(--danger);
-            color: white;
-        }
+        .btn-delete-all:hover { background: var(--danger); color: white; }
 
         .btn-clear {
             text-decoration: none;
             font-size: 0.8rem;
-            color: #ef4444;
-            font-weight: 600;
-            margin-right: 10px;
+            color: var(--danger);
+            font-weight: 700;
+            margin-right: 15px;
         }
 
         .audit-card {
             background: white;
             border-radius: 20px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             overflow: hidden;
             box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05);
         }
 
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th { background: #f8fafc; padding: 16px; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
-        td { padding: 16px; border-top: 1px solid #f1f5f9; font-size: 0.9rem; }
+        th { background: #f8fafc; padding: 16px; font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.1em; }
+        td { padding: 16px; border-top: 1px solid #f1f5f9; font-size: 0.9rem; vertical-align: middle; }
+        tr:hover td { background: #fafbfc; }
 
-        .user-identity {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
+        .user-identity { display: flex; align-items: center; gap: 12px; }
         .audit-avatar {
-            width: 32px;
-            height: 32px;
+            width: 32px; height: 32px;
             border-radius: 8px;
             object-fit: cover;
-            border: 1px solid #e2e8f0;
-            background: #f1f5f9; /* Fallback color */
+            border: 1px solid var(--border);
         }
 
         .action-badge {
             padding: 4px 10px;
             border-radius: 6px;
-            font-weight: 700;
-            font-size: 0.7rem;
+            font-weight: 800;
+            font-size: 0.65rem;
             text-transform: uppercase;
         }
 
         .btn-back {
             text-decoration: none;
             color: var(--text-muted);
-            font-weight: 600;
-            font-size: 0.9rem;
-            display: inline-block;
-            margin-bottom: 5px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 8px;
         }
+        .btn-back:hover { color: var(--primary); }
 
-        .empty-state {
-            padding: 60px;
-            text-align: center;
-            color: var(--text-muted);
-        }
+        .empty-state { padding: 60px; text-align: center; color: var(--text-muted); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <div>
-                <a href="/" class="btn-back">← Back to Dashboard</a>
-                <h1 style="margin: 0;">System Audit Trail</h1>
+                <a href="/" class="btn-back">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    Dashboard
+                </a>
+                <h1 style="margin: 0; letter-spacing: -1px;">System Audit Trail</h1>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
                 {{if or .Start .End}}
-                <a href="/audit" class="btn-clear">Clear Filters</a>
+                <a href="/audit" class="btn-clear">Reset Filters</a>
                 {{end}}
                 
                 <form action="/audit/delete-all" method="POST" onsubmit="return confirmClearLogs()" style="display: inline;">
                     <button type="submit" class="btn-delete-all">
-                        <span>🗑️</span> Clear All Logs
+                        Clear Logs
                     </button>
                 </form>
 
                 <button id="exportBtn" class="btn-export">
-                    <span>📥</span> Export Report (CSV)
+                    <span>📥</span> Export CSV
                 </button>
             </div>
         </div>
 
         <div class="controls-grid">
             <div class="search-container">
-                <label style="display:block; font-size: 0.8rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted);">Quick Search</label>
-                <input type="text" id="auditSearch" class="search-bar" placeholder="Filter by action, product, or user...">
+                <label style="display:block; font-size: 0.75rem; font-weight: 700; margin-bottom: 8px; color: var(--text-muted); text-transform: uppercase;">Search Activity</label>
+                <input type="text" id="auditSearch" class="search-bar" placeholder="Search by action, product, or team member...">
             </div>
 
             <form method="GET" action="/audit" id="filterForm">
-                <label style="display:block; font-size: 0.8rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted);">Date Range</label>
+                <label style="display:block; font-size: 0.75rem; font-weight: 700; margin-bottom: 8px; color: var(--text-muted); text-transform: uppercase;">Filter by Date</label>
                 <div class="date-filter-container">
                     <input type="date" name="start" id="startDate" value="{{.Start}}">
-                    <span style="color: var(--text-muted); font-size: 0.8rem;">to</span>
+                    <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600;">to</span>
                     <input type="date" name="end" id="endDate" value="{{.End}}">
                     <button type="submit" class="btn-filter">Apply</button>
                 </div>
@@ -236,38 +224,46 @@
             <table id="auditTable">
                 <thead>
                     <tr>
-                        <th>Timestamp</th>
+                        <th>Time & Date</th>
                         <th>User</th>
                         <th>Action</th>
-                        <th>Product</th>
+                        <th>Product Context</th>
                         <th>Details</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Logs}}
                     <tr class="audit-row">
-                        <td style="color: var(--text-muted);">{{.CreatedAt.Local.Format "Jan 02, 2006 | 15:04"}}</td>
+                        <td style="color: var(--text-muted); font-weight: 600; font-size: 0.8rem;">
+                            {{.CreatedAt.Local.Format "Jan 02, 15:04"}}
+                        </td>
                         <td>
                             <div class="user-identity">
-                                <img src="{{if .UserProfilePic}}{{.UserProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.UserName}}&background=6366f1&color=fff{{end}}" 
+                                <img src="{{.UserProfilePic}}" 
                                      class="audit-avatar" 
-                                     alt="User" 
-                                     onerror="this.src='https://ui-avatars.com/api/?name={{.UserName}}&background=6366f1&color=fff'">
-                                <strong>{{.UserName}}</strong>
+                                     alt="Avatar" 
+                                     onerror="this.src='https://ui-avatars.com/api/?name={{.UserName}}&background=6366f1&color=fff&bold=true'">
+                                <strong style="font-size: 0.85rem;">{{.UserName}}</strong>
                             </div>
                         </td>
                         <td>
-                            <span class="action-badge" style="background: {{if eq .Action "Sale"}}#ecfdf5; color: #059669;{{else if eq .Action "Deleted"}}#fff1f2; color: #e11d48;{{else if eq .Action "Added"}}#f0fdf4; color: #16a34a;{{else}}#eff6ff; color: #2563eb;{{end}}">
+                            <span class="action-badge" style="
+                                {{if eq .Action "Sale"}} background: #ecfdf5; color: #059669; 
+                                {{else if eq .Action "Deleted"}} background: #fff1f2; color: #e11d48; 
+                                {{else if eq .Action "Added"}} background: #f0fdf4; color: #16a34a; 
+                                {{else if eq .Action "Updated"}} background: #fffbeb; color: #d97706;
+                                {{else}} background: #eff6ff; color: #2563eb; {{end}}">
                                 {{.Action}}
                             </span>
                         </td>
-                        <td>{{.ProductName}}</td>
-                        <td style="font-size: 0.8rem; color: var(--text-muted);">{{.Details}}</td>
+                        <td style="font-weight: 600;">{{if .ProductName}}{{.ProductName}}{{else}}<span style="color: #cbd5e1">—</span>{{end}}</td>
+                        <td style="font-size: 0.8rem; color: var(--text-muted); max-width: 300px;">{{.Details}}</td>
                     </tr>
                     {{else}}
                     <tr>
                         <td colspan="5" class="empty-state">
-                            <p>No activity logs found for the selected criteria.</p>
+                            <p style="font-weight: 600;">No activity logs found.</p>
+                            <small>Try adjusting your search or date filters.</small>
                         </td>
                     </tr>
                     {{end}}
@@ -278,9 +274,10 @@
 
     <script>
         function confirmClearLogs() {
-            return confirm("WARNING: This will permanently delete ALL activity logs. This action cannot be undone. Are you sure?");
+            return confirm("CRITICAL: You are about to wipe the entire system audit trail. This cannot be undone. Proceed?");
         }
 
+        // Real-time frontend filtering
         document.getElementById('auditSearch').addEventListener('input', function(e) {
             const term = e.target.value.toLowerCase();
             const rows = document.querySelectorAll('.audit-row');
@@ -291,15 +288,17 @@
             });
         });
 
+        // Dynamic Export URL
         document.getElementById('exportBtn').addEventListener('click', function() {
             const start = document.getElementById('startDate').value;
             const end = document.getElementById('endDate').value;
             
             let exportUrl = '/export-audit';
-            if (start && end) {
-                exportUrl += `?start=${start}&end=${end}`;
-            }
-                               
+            const params = new URLSearchParams();
+            if (start) params.append('start', start);
+            if (end) params.append('end', end);
+            
+            if (params.toString()) exportUrl += '?' + params.toString();
             window.location.href = exportUrl;
         });
     </script>

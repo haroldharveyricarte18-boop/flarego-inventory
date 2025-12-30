@@ -121,12 +121,13 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations
+	// Migrations / Schema Updates
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 	db.Exec("ALTER TABLE users ALTER COLUMN profile_pic TYPE TEXT;")
 
+	// Create Default Admin
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
@@ -189,51 +190,87 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // --- HANDLERS ---
 
-func handleSendNotification(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request", 405)
-		return
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, _ := r.Cookie("session_token")
+	var u User
+	db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.ProfilePic, &u.Role)
+
+	// Handle Edit Item Context
+	var editItem *Product
+	editID := r.URL.Query().Get("edit")
+	if editID != "" {
+		var p Product
+		err := db.QueryRow("SELECT id, name, price, cost_price, description, stock FROM products WHERE id=$1", editID).
+			Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
+		if err == nil {
+			editItem = &p
+		}
 	}
 
-	title := r.FormValue("title")
-	msg := r.FormValue("message")
-
-	if title == "" || msg == "" {
-		http.Error(w, "Title and Message are required", http.StatusBadRequest)
-		return
-	}
-
-	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
-	if err != nil {
-		http.Error(w, "Failed to save broadcast", 500)
-		return
-	}
-
-	logActivity(r, "Broadcast", "System Update", "Admin sent a message to all staff")
-	w.WriteHeader(http.StatusOK)
-}
-
-func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
-	if err != nil {
-		http.Error(w, "Database error", 500)
-		return
-	}
+	// Fetch Products & Metrics
+	rows, _ := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
 	defer rows.Close()
 
-	var notifs []Notification
+	var products []Product
+	var totalValue, totalProfit float64
+	var totalStockItems int
+	var lowStockCount int
+
 	for rows.Next() {
+		var p Product
+		rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
+		p.NumericStock = p.GetNumericStock()
+		sellPrice := parsePrice(p.Price)
+		totalValue += sellPrice * float64(p.NumericStock)
+		totalProfit += (sellPrice - p.CostPrice) * float64(p.NumericStock)
+		totalStockItems += p.NumericStock
+		if p.NumericStock <= 5 {
+			lowStockCount++
+		}
+		products = append(products, p)
+	}
+
+	healthScore := 100
+	if len(products) > 0 {
+		healthScore = 100 - (lowStockCount * 100 / len(products))
+	}
+
+	// Fetch Recent Logs
+	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
+	var logs []ActivityLog
+	for logRows.Next() {
+		var l ActivityLog
+		logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
+		logs = append(logs, l)
+	}
+	logRows.Close()
+
+	// Fetch Recent Notifications
+	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
+	var notifs []Notification
+	for notifRows.Next() {
 		var n Notification
-		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+		notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
 		notifs = append(notifs, n)
 	}
+	notifRows.Close()
 
-	if notifs == nil {
-		notifs = []Notification{}
+	tmpl, _ := template.New("index.html").Funcs(template.FuncMap{"sub": sub}).ParseFiles("index.html")
+	data := map[string]interface{}{
+		"User":            u,
+		"Products":        products,
+		"Logs":            logs,
+		"Notifications":   notifs,
+		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
+		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
+		"TotalStockItems": totalStockItems,
+		"TotalSales":      countSalesToday(),
+		"HealthScore":     healthScore,
+		"EditItem":        editItem,
+		"IsEditing":       editItem != nil,
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(notifs)
+	tmpl.Execute(w, data)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -275,52 +312,84 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		username := r.URL.Query().Get("username")
-		if username != "" {
-			var u User
-			u.Username = username
-			tmpl, _ := template.ParseFiles("reset.html")
-			tmpl.Execute(w, u)
-			return
-		}
-		tmpl, _ := template.ParseFiles("forgot_password.html")
-		tmpl.Execute(w, nil)
-		return
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_token")
+	if err == nil {
+		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Logout", "Account", "User signed out", cookie.Value)
 	}
-	username := r.FormValue("username")
-	var u User
-	err := db.QueryRow("SELECT username FROM users WHERE username=$1", username).Scan(&u.Username)
-	if err != nil {
-		http.Redirect(w, r, "/forgot?error=usernotfound", http.StatusSeeOther)
-		return
-	}
-	tmpl, _ := template.ParseFiles("reset.html")
-	tmpl.Execute(w, u)
+	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
+func addHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		username := r.FormValue("username")
-		answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
-		newPass := r.FormValue("new_password")
+		id := r.FormValue("id")
+		name := r.FormValue("name")
+		price := r.FormValue("price")
+		cost, _ := strconv.ParseFloat(r.FormValue("cost_price"), 64)
+		desc := r.FormValue("desc")
+		stock := r.FormValue("stock")
 
-		var dbAnswer string
-		err := db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
-
-		if err == nil && dbAnswer == answer {
-			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
-			if err == nil {
-				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
-				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
-				return
-			}
+		if id != "" {
+			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6", name, price, cost, desc, stock, id)
+			logActivity(r, "Updated", name, "Product info modified")
+		} else {
+			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)", name, price, cost, desc, stock)
+			logActivity(r, "Added", name, "New product created")
 		}
-		http.Redirect(w, r, "/forgot?username="+username+"&error=invalid", http.StatusSeeOther)
-		return
 	}
-	http.Redirect(w, r, "/forgot", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func sellHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		id := r.FormValue("id")
+		var name string
+		db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
+		res, _ := db.Exec("UPDATE products SET stock = (stock::int - 1)::text WHERE id=$1 AND stock::int > 0", id)
+		count, _ := res.RowsAffected()
+		if count > 0 {
+			logActivity(r, "Sale", name, "Sold 1 unit")
+		}
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	var name string
+	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
+	db.Exec("DELETE FROM products WHERE id=$1", id)
+	logActivity(r, "Deleted", name, "Product removed from inventory")
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, _ := r.Cookie("session_token")
+	r.ParseMultipartForm(5 << 20)
+	displayName := r.FormValue("display_name")
+
+	file, _, err := r.FormFile("profile_pic_file")
+	if err == nil {
+		defer file.Close()
+		fileBytes, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "Failed to read image", 500)
+			return
+		}
+
+		mimeType := http.DetectContentType(fileBytes)
+		header := "data:" + mimeType + ";base64,"
+		encoded := base64.StdEncoding.EncodeToString(fileBytes)
+		fullBase64 := header + encoded
+
+		_, err = db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
+		logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
+	} else {
+		_, err = db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
+		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func userManagementHandler(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +409,23 @@ func userManagementHandler(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, _ := template.ParseFiles("users.html")
 	tmpl.Execute(w, map[string]interface{}{"Users": users})
+}
+
+func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	newRole := r.URL.Query().Get("role")
+
+	var targetUser string
+	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
+
+	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
+	if err != nil {
+		http.Error(w, "Update failed", 500)
+		return
+	}
+
+	logActivity(r, "User Management", targetUser, "Changed role to "+newRole)
+	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 
 func auditTrailHandler(w http.ResponseWriter, r *http.Request) {
@@ -439,180 +525,52 @@ func deleteAllAuditHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/audit", http.StatusSeeOther)
 }
 
-func changeRoleHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	newRole := r.URL.Query().Get("role")
-
-	var targetUser string
-	db.QueryRow("SELECT username FROM users WHERE id=$1", id).Scan(&targetUser)
-
-	_, err := db.Exec("UPDATE users SET role=$1 WHERE id=$2 AND username != 'admin'", newRole, id)
-	if err != nil {
-		http.Error(w, "Update failed", 500)
-		return
-	}
-
-	logActivity(r, "User Management", targetUser, "Changed role to "+newRole)
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
-}
-
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, _ := r.Cookie("session_token")
-	var u User
-	db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.ProfilePic, &u.Role)
-
-	var editItem *Product
-	editID := r.URL.Query().Get("edit")
-	if editID != "" {
-		var p Product
-		err := db.QueryRow("SELECT id, name, price, cost_price, description, stock FROM products WHERE id=$1", editID).
-			Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
-		if err == nil {
-			editItem = &p
-		}
-	}
-
-	rows, _ := db.Query("SELECT id, name, price, cost_price, description, stock FROM products ORDER BY id DESC")
-	defer rows.Close()
-
-	var products []Product
-	var totalValue, totalProfit float64
-	var totalStockItems int
-	var lowStockCount int
-
-	for rows.Next() {
-		var p Product
-		rows.Scan(&p.ID, &p.Name, &p.Price, &p.CostPrice, &p.Desc, &p.Stock)
-		p.NumericStock = p.GetNumericStock()
-		sellPrice := parsePrice(p.Price)
-		totalValue += sellPrice * float64(p.NumericStock)
-		totalProfit += (sellPrice - p.CostPrice) * float64(p.NumericStock)
-		totalStockItems += p.NumericStock
-		if p.NumericStock <= 5 {
-			lowStockCount++
-		}
-		products = append(products, p)
-	}
-
-	healthScore := 100
-	if len(products) > 0 {
-		healthScore = 100 - (lowStockCount * 100 / len(products))
-	}
-
-	logRows, _ := db.Query("SELECT action, product_name, created_at FROM activity_logs ORDER BY created_at DESC LIMIT 5")
-	defer logRows.Close()
-	var logs []ActivityLog
-	for logRows.Next() {
-		var l ActivityLog
-		logRows.Scan(&l.Action, &l.ProductName, &l.CreatedAt)
-		logs = append(logs, l)
-	}
-
-	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
-	var notifs []Notification
-	for notifRows.Next() {
-		var n Notification
-		notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
-		notifs = append(notifs, n)
-	}
-	notifRows.Close()
-
-	tmpl, _ := template.New("index.html").Funcs(template.FuncMap{"sub": sub}).ParseFiles("index.html")
-	data := map[string]interface{}{
-		"User":            u,
-		"Products":        products,
-		"Logs":            logs,
-		"Notifications":   notifs,
-		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
-		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
-		"TotalStockItems": totalStockItems,
-		"TotalSales":      countSalesToday(),
-		"HealthScore":     healthScore,
-		"EditItem":        editItem,
-		"IsEditing":       editItem != nil,
-	}
-	tmpl.Execute(w, data)
-}
-
-func addHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		id := r.FormValue("id")
-		name := r.FormValue("name")
-		price := r.FormValue("price")
-		cost, _ := strconv.ParseFloat(r.FormValue("cost_price"), 64)
-		desc := r.FormValue("desc")
-		stock := r.FormValue("stock")
-
-		if id != "" {
-			db.Exec("UPDATE products SET name=$1, price=$2, cost_price=$3, description=$4, stock=$5 WHERE id=$6", name, price, cost, desc, stock, id)
-			logActivity(r, "Updated", name, "Product info modified")
-		} else {
-			db.Exec("INSERT INTO products (name, price, cost_price, description, stock) VALUES ($1, $2, $3, $4, $5)", name, price, cost, desc, stock)
-			logActivity(r, "Added", name, "New product created")
-		}
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func updateProfileHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, _ := r.Cookie("session_token")
-	r.ParseMultipartForm(5 << 20)
-	displayName := r.FormValue("display_name")
-
-	file, _, err := r.FormFile("profile_pic_file")
-	if err == nil {
-		defer file.Close()
-		fileBytes, err := io.ReadAll(file)
-		if err != nil {
-			http.Error(w, "Failed to read image", 500)
+func forgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		username := r.URL.Query().Get("username")
+		if username != "" {
+			var u User
+			u.Username = username
+			tmpl, _ := template.ParseFiles("reset.html")
+			tmpl.Execute(w, u)
 			return
 		}
-
-		mimeType := http.DetectContentType(fileBytes)
-		header := "data:" + mimeType + ";base64,"
-		encoded := base64.StdEncoding.EncodeToString(fileBytes)
-		fullBase64 := header + encoded
-
-		_, err = db.Exec("UPDATE users SET display_name=$1, profile_pic=$2 WHERE username=$3", displayName, fullBase64, cookie.Value)
-		logActivity(r, "Profile Update", "Avatar", "User updated profile picture and display name")
-	} else {
-		_, err = db.Exec("UPDATE users SET display_name=$1 WHERE username=$2", displayName, cookie.Value)
-		logActivity(r, "Profile Update", "Display Name", "User changed display name to "+displayName)
+		tmpl, _ := template.ParseFiles("forgot_password.html")
+		tmpl.Execute(w, nil)
+		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	username := r.FormValue("username")
+	var u User
+	err := db.QueryRow("SELECT username FROM users WHERE username=$1", username).Scan(&u.Username)
+	if err != nil {
+		http.Redirect(w, r, "/forgot?error=usernotfound", http.StatusSeeOther)
+		return
+	}
+	tmpl, _ := template.ParseFiles("reset.html")
+	tmpl.Execute(w, u)
 }
 
-func sellHandler(w http.ResponseWriter, r *http.Request) {
+func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		id := r.FormValue("id")
-		var name string
-		db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
-		res, _ := db.Exec("UPDATE products SET stock = (stock::int - 1)::text WHERE id=$1 AND stock::int > 0", id)
-		count, _ := res.RowsAffected()
-		if count > 0 {
-			logActivity(r, "Sale", name, "Sold 1 unit")
+		username := r.FormValue("username")
+		answer := strings.ToLower(strings.TrimSpace(r.FormValue("secret_answer")))
+		newPass := r.FormValue("new_password")
+
+		var dbAnswer string
+		err := db.QueryRow("SELECT secret_answer FROM users WHERE username=$1", username).Scan(&dbAnswer)
+
+		if err == nil && dbAnswer == answer {
+			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
+			if err == nil {
+				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
+				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
+				return
+			}
 		}
+		http.Redirect(w, r, "/forgot?username="+username+"&error=invalid", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func logoutHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session_token")
-	if err == nil {
-		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Logout", "Account", "User signed out", cookie.Value)
-	}
-	http.SetCookie(w, &http.Cookie{Name: "session_token", Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
-}
-
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
-	var name string
-	db.QueryRow("SELECT name FROM products WHERE id=$1", id).Scan(&name)
-	db.Exec("DELETE FROM products WHERE id=$1", id)
-	logActivity(r, "Deleted", name, "Product removed from inventory")
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/forgot", http.StatusSeeOther)
 }
 
 func exportHandler(w http.ResponseWriter, r *http.Request) {
@@ -630,20 +588,69 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 	logActivity(r, "Export", "Inventory CSV", "Admin exported the product list")
 }
 
+func handleSendNotification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request", 405)
+		return
+	}
+
+	title := r.FormValue("title")
+	msg := r.FormValue("message")
+
+	if title == "" || msg == "" {
+		http.Error(w, "Title and Message are required", http.StatusBadRequest)
+		return
+	}
+
+	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
+	if err != nil {
+		http.Error(w, "Failed to save broadcast", 500)
+		return
+	}
+
+	logActivity(r, "Broadcast", "System Update", "Admin sent a message to all staff")
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer rows.Close()
+
+	var notifs []Notification
+	for rows.Next() {
+		var n Notification
+		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+		notifs = append(notifs, n)
+	}
+
+	if notifs == nil {
+		notifs = []Notification{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(notifs)
+}
+
 func main() {
 	initDB()
 	defer db.Close()
 
+	// Public Routes
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
-	http.HandleFunc("/", checkAuth(homeHandler))
 	http.HandleFunc("/forgot", forgotPasswordHandler)
 	http.HandleFunc("/reset-password", resetPasswordHandler)
-	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
-	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
-	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
-	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
-	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
+
+	// Protected Routes (All Users)
+	http.HandleFunc("/", checkAuth(homeHandler))
+	http.HandleFunc("/logout", checkAuth(logoutHandler))
+	http.HandleFunc("/sell", checkAuth(sellHandler))
+	http.HandleFunc("/update-profile", checkAuth(updateProfileHandler))
+	http.HandleFunc("/api/get-notifications", checkAuth(handleGetNotifications))
 	http.HandleFunc("/settings", checkAuth(func(w http.ResponseWriter, r *http.Request) {
 		cookie, _ := r.Cookie("session_token")
 		var u User
@@ -651,16 +658,17 @@ func main() {
 		tmpl, _ := template.ParseFiles("settings.html")
 		tmpl.Execute(w, map[string]interface{}{"User": u})
 	}))
-	http.HandleFunc("/update-profile", checkAuth(updateProfileHandler))
-	http.HandleFunc("/logout", checkAuth(logoutHandler))
-	http.HandleFunc("/sell", checkAuth(sellHandler))
+
+	// Admin Only Routes
 	http.HandleFunc("/add", checkAuth(adminOnly(addHandler)))
 	http.HandleFunc("/delete", checkAuth(adminOnly(deleteHandler)))
 	http.HandleFunc("/export", checkAuth(adminOnly(exportHandler)))
-
-	// Notification Routes
+	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
+	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
+	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
+	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
+	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
 	http.HandleFunc("/api/send-notification", checkAuth(adminOnly(handleSendNotification)))
-	http.HandleFunc("/api/get-notifications", checkAuth(handleGetNotifications))
 
 	port := os.Getenv("PORT")
 	if port == "" {

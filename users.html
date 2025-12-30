@@ -9,6 +9,7 @@
         :root {
             --primary: #6366f1;
             --danger: #ef4444;
+            --success: #10b981;
             --text-main: #1e293b;
             --text-muted: #64748b;
             --bg: #f8fafc;
@@ -35,7 +36,6 @@
             border: 1px solid var(--border); 
         }
         
-        /* Back Navigation */
         .back-link { 
             display: inline-flex; 
             align-items: center; 
@@ -49,11 +49,9 @@
         }
         .back-link:hover { color: var(--primary); }
 
-        /* Typography */
         h1 { margin: 0; font-size: 1.8rem; letter-spacing: -1px; font-weight: 800; }
         .subtitle { color: var(--text-muted); margin-top: 4px; font-size: 0.95rem; }
 
-        /* Search Input */
         .search-box {
             width: 100%;
             padding: 14px 18px;
@@ -73,7 +71,6 @@
             box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1); 
         }
 
-        /* Table Styling */
         table { width: 100%; border-collapse: collapse; }
         th { 
             text-align: left; 
@@ -86,9 +83,7 @@
         }
         td { padding: 16px; border-bottom: 1px solid var(--bg); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #fafbfc; }
 
-        /* Status Badges */
         .badge { 
             padding: 6px 12px; 
             border-radius: 8px; 
@@ -97,10 +92,9 @@
             text-transform: uppercase; 
             display: inline-block;
         }
-        .admin { background: #eef2ff; color: var(--primary); }
-        .staff { background: #f1f5f9; color: var(--text-muted); }
+        .badge.admin { background: #eef2ff; color: var(--primary); }
+        .badge.staff { background: #f1f5f9; color: var(--text-muted); }
         
-        /* Action Buttons */
         .btn-action { 
             text-decoration: none; 
             font-size: 0.75rem; 
@@ -127,9 +121,8 @@
             background: #fef2f2; 
         }
         
-        /* User Identity */
         .user-info strong { display: block; font-size: 0.95rem; color: #0f172a; }
-        .user-info small { color: var(--text-muted); font-family: monospace; font-size: 0.8rem; }
+        .user-info small { color: var(--text-muted); font-size: 0.8rem; }
         
         .avatar {
             width: 42px;
@@ -137,6 +130,16 @@
             border-radius: 12px;
             object-fit: cover;
             background: var(--bg);
+            border: 1px solid var(--border);
+        }
+
+        .status-pill {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--bg);
+            color: var(--text-muted);
             border: 1px solid var(--border);
         }
 
@@ -157,7 +160,7 @@
         
         <header>
             <h1>User Management</h1>
-            <p class="subtitle">Manage system access levels and team member roles.</p>
+            <p class="subtitle">Assign roles and manage team access permissions.</p>
         </header>
 
         <input type="text" id="userSearch" class="search-box" placeholder="Search by name, username, or role...">
@@ -171,35 +174,38 @@
                 </tr>
             </thead>
             <tbody>
-                {{$currentID := .CurrentUserID}} 
                 {{range .Users}}
                 <tr class="user-row">
                     <td>
                         <div style="display:flex; align-items:center; gap:14px;">
-                            <img src="{{if .ProfilePic}}{{.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.DisplayName}}&background=6366f1&color=fff&bold=true{{end}}" 
+                            <img src="{{.ProfilePic}}" 
                                  alt="{{.DisplayName}}" class="avatar"
-                                 onerror="this.src='https://ui-avatars.com/api/?name={{.DisplayName}}&background=6366f1&color=fff'">
+                                 onerror="this.src='https://ui-avatars.com/api/?name={{.DisplayName}}&background=6366f1&color=fff&bold=true'">
                             <div class="user-info">
                                 <strong>{{.DisplayName}}</strong>
                                 <small>@{{.Username}}</small>
                             </div>
                         </div>
                     </td>
-                    <td><span class="badge {{.Role}}">{{.Role}}</span></td>
+                    <td>
+                        <span class="badge {{.Role}}">{{.Role}}</span>
+                    </td>
                     <td style="text-align: right;">
-                        {{if eq .ID $currentID}}
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700; background: var(--bg); padding: 6px 12px; border-radius: 6px;">You</span>
-                        {{else if eq .Username "admin"}}
-                            <span style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">System</span>
+                        {{if eq .Username "admin"}}
+                            <span class="status-pill">System Root</span>
                         {{else}}
                             {{if eq .Role "admin"}}
                                 <a href="/change-role?id={{.ID}}&role=staff" 
                                    class="btn-action btn-danger" 
-                                   onclick="return confirm('Confirm: Revoke Administrative access for {{.DisplayName}}?')">Demote</a>
+                                   onclick="return confirm('Revoke admin access for {{.DisplayName}}?')">
+                                   Revoke Admin
+                                </a>
                             {{else}}
                                 <a href="/change-role?id={{.ID}}&role=admin" 
                                    class="btn-action" 
-                                   onclick="return confirm('Confirm: Grant Administrative access to {{.DisplayName}}?')">Promote</a>
+                                   onclick="return confirm('Promote {{.DisplayName}} to Administrator?')">
+                                   Make Admin
+                                </a>
                             {{end}}
                         {{end}}
                     </td>
@@ -209,7 +215,7 @@
         </table>
         
         <div id="noResults" class="empty-state">
-            <p>No members match your search criteria.</p>
+            <p>No team members found matching your search.</p>
         </div>
     </div>
 

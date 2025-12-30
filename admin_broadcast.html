@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Flarego Admin | Broadcast</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background: #f4f7fe; padding-top: 50px; }
+        .broadcast-card { border-radius: 15px; border: none; }
+        .btn-flare { background: #6366f1; color: white; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card broadcast-card shadow-sm p-5 text-center">
+                    <i class="fas fa-tools fa-3x text-primary mb-4"></i>
+                    <h2>Broadcast System Update</h2>
+                    <p class="text-muted">This message will be sent to all staff members.</p>
+                    
+                    <div class="mt-4 text-start">
+                        <label class="form-label fw-bold">Update Title</label>
+                        <input type="text" id="title" class="form-control mb-3" placeholder="e.g. System Maintenance">
+                        
+                        <label class="form-label fw-bold">Message</label>
+                        <textarea id="message" class="form-control mb-4" rows="4" placeholder="Type your announcement here..."></textarea>
+                        
+                        <button onclick="send()" class="btn btn-flare w-100 p-3 shadow">
+                            <i class="fas fa-paper-plane me-2"></i> Post Update Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function send() {
+            const title = document.getElementById('title').value;
+            const message = document.getElementById('message').value;
+
+            const res = await fetch('/api/broadcast/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, message })
+            });
+
+            if(res.ok) {
+                alert('Broadcast posted successfully!');
+                window.close(); // Optional: close the tab after sending
+            } else {
+                alert('Failed to send broadcast.');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -189,7 +189,6 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // --- HANDLERS ---
 
-// handleSendNotification manages the broadcast from the admin dashboard
 func handleSendNotification(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request", 405)
@@ -510,7 +509,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		logs = append(logs, l)
 	}
 
-	// Fetch notifications for initial load
 	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
 	var notifs []Notification
 	for notifRows.Next() {

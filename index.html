@@ -66,7 +66,7 @@
             padding: 2px 6px;
             border-radius: 10px;
             border: 2px solid white;
-            display: none;
+            display: none; 
         }
 
         .notif-dropdown {
@@ -330,7 +330,9 @@
             align-items: center;
         }
 
-        .product-row:hover .product-actions { opacity: 1; }
+        .product-row:hover .product-actions {
+            opacity: 1;
+        }
 
         .status-badge {
             padding: 6px 12px;
@@ -474,9 +476,9 @@
                     <div id="profileDropdown" class="profile-dropdown">
                         <a href="/settings" target="_blank">⚙️ Profile Settings</a>
                         {{ if eq .User.Role "admin" }}
+                        <a href="/admin/broadcast" target="_blank" style="background: #f5f7ff; color: var(--primary);">📢 Broadcast System</a>
                         <a href="/users">👥 User Management</a>
                         <a href="/audit">📜 Audit Trail</a>
-                        <a href="/settings#broadcast" style="border-top: 1px solid #f1f5f9;">🛠️ Broadcast Update</a>
                         {{ end }}
                         <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
                         <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
@@ -646,11 +648,13 @@
                             </span>
                         </div>
                         <div style="font-weight: 800;">₱${p.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        
                         <div class="product-actions">
                             <form action="/sell" method="POST" style="margin:0;">
                                 <input type="hidden" name="id" value="${p.id}">
                                 <button type="submit" class="btn-sell" ${p.stock <= 0 ? 'disabled title="Out of Stock"' : ''}>💰 SELL</button>
                             </form>
+                            
                             {{ if eq $.User.Role "admin" }}
                             <a href="/?edit=${p.id}" style="color: var(--primary); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Edit</a>
                             <a href="/delete?id=${p.id}" onclick="return confirm('Delete this product?')" style="color: var(--danger); text-decoration: none; font-size: 0.8rem; font-weight: 700;">Del</a>
@@ -664,15 +668,21 @@
             document.getElementById('pageIndicator').innerText = `Page ${currentPage} of ${totalPages}`;
             document.getElementById('prevBtn').disabled = currentPage === 1;
             document.getElementById('nextBtn').disabled = currentPage === totalPages;
+            document.getElementById('jumpPageInput').max = totalPages;
         }
 
+        // --- Notification UI Handlers ---
         function toggleNotifDropdown(e) {
             e.stopPropagation();
             const d = document.getElementById('notifDropdown');
             const p = document.getElementById('profileDropdown');
             if(p) p.style.display = 'none';
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
-            if(d.style.display === 'block') { unreadCount = 0; updateBadge(); }
+            
+            if(d.style.display === 'block') {
+                unreadCount = 0;
+                updateBadge();
+            }
         }
 
         function toggleProfileDropdown(e) {
@@ -694,10 +704,16 @@
             const list = document.getElementById('notifList');
             const empty = document.getElementById('notifEmptyState');
             if(empty) empty.remove();
+
             const item = document.createElement('div');
             item.className = 'notif-item unread';
-            item.innerHTML = `<strong style="font-size: 0.85rem; display: block;">${title}</strong><span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span><span class="time">Just now</span>`;
+            item.innerHTML = `
+                <strong style="font-size: 0.85rem; display: block;">${title}</strong>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
+                <span class="time">Just now</span>
+            `;
             list.prepend(item);
+            
             unreadCount++;
             updateBadge();
         }
@@ -708,16 +724,87 @@
             badge.style.display = unreadCount > 0 ? 'block' : 'none';
         }
 
+        function clearNotifications() {
+            document.getElementById('notifList').innerHTML = `<div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>`;
+            unreadCount = 0;
+            updateBadge();
+        }
+
         const evtSource = new EventSource("/events");
         evtSource.onmessage = function(event) {
             const data = JSON.parse(event.data);
             addNotification(data.title, data.message);
         };
 
-        function toggleForm() {
-            const f = document.getElementById('form-content');
-            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        function toggleSort(col) {
+            if (sortState.column === col) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.column = col;
+                sortState.direction = 'asc';
+            }
+            
+            ['name', 'stock', 'price'].forEach(c => {
+                document.getElementById(`sort-${c}`).innerText = '↕';
+            });
+            document.getElementById(`sort-${col}`).innerText = sortState.direction === 'asc' ? '↑' : '↓';
+
+            filteredProducts.sort((a, b) => {
+                let valA = a[col];
+                let valB = b[col];
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+                
+                if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderInventory();
         }
+
+        function changePage(dir) {
+            currentPage += dir;
+            renderInventory();
+        }
+
+        function handleJump(e) {
+            if (e.key === 'Enter') {
+                const page = parseInt(e.target.value);
+                const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+                if (page >= 1 && page <= totalPages) {
+                    currentPage = page;
+                    renderInventory();
+                }
+            }
+        }
+
+        document.getElementById('posSearch').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            filteredProducts = allProducts.filter(p => 
+                p.name.toLowerCase().includes(term) || 
+                p.desc.toLowerCase().includes(term)
+            );
+            currentPage = 1;
+            renderInventory();
+        });
+
+        function toggleForm() {
+            const form = document.getElementById('form-content');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        const healthCtx = document.getElementById('healthChart').getContext('2d');
+        new Chart(healthCtx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [{{.HealthScore}}, 100-{{.HealthScore}}],
+                    backgroundColor: ['#6366f1', '#e2e8f0'],
+                    borderWidth: 0
+                }]
+            },
+            options: { cutout: '75%', plugins: { tooltip: { enabled: false } } }
+        });
 
         renderInventory();
     </script>

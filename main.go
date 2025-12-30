@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -47,6 +48,13 @@ type ActivityLog struct {
 	UserName       string
 	UserProfilePic string
 	CreatedAt      time.Time
+}
+
+type Notification struct {
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (p Product) GetNumericStock() int {
@@ -102,12 +110,18 @@ func initDB() {
             role TEXT DEFAULT 'staff',
             theme_preference TEXT DEFAULT 'light'
         );
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            title TEXT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     `)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Migrations to ensure TEXT type for large Base64 strings
+	// Migrations
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
@@ -175,6 +189,41 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // --- HANDLERS ---
 
+func handleSendNotification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request", 405)
+		return
+	}
+	title := r.FormValue("title")
+	msg := r.FormValue("message")
+
+	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
+	if err != nil {
+		http.Error(w, "Failed to save", 500)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 10")
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer rows.Close()
+
+	var notifs []Notification
+	for rows.Next() {
+		var n Notification
+		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+		notifs = append(notifs, n)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(notifs)
+}
+
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		tmpl, _ := template.ParseFiles("login.html")
@@ -187,7 +236,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&dbPassword)
 	if err == nil && password == dbPassword {
 		http.SetCookie(w, &http.Cookie{Name: "session_token", Value: username, Path: "/", HttpOnly: true})
-		// AUDIT: Log Login
 		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Login", "Account", "User signed in", username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
@@ -252,7 +300,6 @@ func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil && dbAnswer == answer {
 			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
 			if err == nil {
-				// AUDIT: Log Password Reset
 				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
 				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
 				return
@@ -450,11 +497,22 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		logs = append(logs, l)
 	}
 
+	// Fetch notifications for initial load
+	notifRows, _ := db.Query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5")
+	var notifs []Notification
+	for notifRows.Next() {
+		var n Notification
+		notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
+		notifs = append(notifs, n)
+	}
+	notifRows.Close()
+
 	tmpl, _ := template.New("index.html").Funcs(template.FuncMap{"sub": sub}).ParseFiles("index.html")
 	data := map[string]interface{}{
 		"User":            u,
 		"Products":        products,
 		"Logs":            logs,
+		"Notifications":   notifs,
 		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
 		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
@@ -588,6 +646,10 @@ func main() {
 	http.HandleFunc("/add", checkAuth(adminOnly(addHandler)))
 	http.HandleFunc("/delete", checkAuth(adminOnly(deleteHandler)))
 	http.HandleFunc("/export", checkAuth(adminOnly(exportHandler)))
+
+	// Notification Routes
+	http.HandleFunc("/api/send-notification", checkAuth(adminOnly(handleSendNotification)))
+	http.HandleFunc("/api/get-notifications", checkAuth(handleGetNotifications))
 
 	port := os.Getenv("PORT")
 	if port == "" {

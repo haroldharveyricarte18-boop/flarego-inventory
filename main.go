@@ -49,17 +49,6 @@ type ActivityLog struct {
 	CreatedAt      time.Time
 }
 
-// NEW: Notification Model
-type Notification struct {
-	ID        int
-	UserID    sql.NullInt64 // Null means Broadcast to all
-	Type      string
-	Title     string
-	Message   string
-	IsRead    bool
-	CreatedAt time.Time
-}
-
 func (p Product) GetNumericStock() int {
 	val, _ := strconv.Atoi(p.Stock)
 	return val
@@ -113,21 +102,12 @@ func initDB() {
             role TEXT DEFAULT 'staff',
             theme_preference TEXT DEFAULT 'light'
         );
-        -- NEW: Notifications Table
-        CREATE TABLE IF NOT EXISTS notifications (
-            id SERIAL PRIMARY KEY,
-            user_id INT DEFAULT NULL, 
-            type TEXT,
-            title TEXT,
-            message TEXT,
-            is_read BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
     `)
 	if err != nil {
 		log.Fatal("Database init error:", err)
 	}
 
+	// Migrations to ensure TEXT type for large Base64 strings
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
@@ -154,11 +134,6 @@ func logActivity(r *http.Request, action, name, details string) {
 		username = cookie.Value
 	}
 	db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", action, name, details, username)
-}
-
-// NEW: Helper to create notifications
-func createNotif(userID interface{}, nType, title, msg string) {
-	db.Exec("INSERT INTO notifications (user_id, type, title, message) VALUES ($1, $2, $3, $4)", userID, nType, title, msg)
 }
 
 func countSalesToday() int {
@@ -209,29 +184,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	var dbPassword string
-	var userID int
-	err := db.QueryRow("SELECT id, password FROM users WHERE username=$1", username).Scan(&userID, &dbPassword)
+	err := db.QueryRow("SELECT password FROM users WHERE username=$1", username).Scan(&dbPassword)
 	if err == nil && password == dbPassword {
 		http.SetCookie(w, &http.Cookie{Name: "session_token", Value: username, Path: "/", HttpOnly: true})
-
-		// AUDIT & NOTIFICATION: Log Login
+		// AUDIT: Log Login
 		db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Login", "Account", "User signed in", username)
-		createNotif(userID, "security", "New Login Detected", "You successfully signed into Flarego.")
-
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
 	}
-}
-
-// NEW: Broadcast Handler for Admin
-func broadcastHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		title := r.FormValue("title")
-		message := r.FormValue("message")
-		createNotif(nil, "broadcast", title, message)
-	}
-	http.Redirect(w, r, "/audit", http.StatusSeeOther)
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +252,7 @@ func resetPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil && dbAnswer == answer {
 			_, err = db.Exec("UPDATE users SET password=$1 WHERE username=$2", newPass, username)
 			if err == nil {
+				// AUDIT: Log Password Reset
 				db.Exec("INSERT INTO activity_logs (action, product_name, details, user_name) VALUES ($1, $2, $3, $4)", "Security", "Password", "User reset their password", username)
 				http.Redirect(w, r, "/login?reset=success", http.StatusSeeOther)
 				return
@@ -441,20 +403,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT id, username, display_name, profile_pic, role FROM users WHERE username=$1", cookie.Value).
 		Scan(&u.ID, &u.Username, &u.DisplayName, &u.ProfilePic, &u.Role)
 
-	// NEW: Fetch Notifications for this user
-	notifRows, _ := db.Query("SELECT id, title, message, is_read, created_at FROM notifications WHERE user_id = $1 OR user_id IS NULL ORDER BY created_at DESC LIMIT 5", u.ID)
-	var notifications []Notification
-	unreadCount := 0
-	for notifRows.Next() {
-		var n Notification
-		notifRows.Scan(&n.ID, &n.Title, &n.Message, &n.IsRead, &n.CreatedAt)
-		if !n.IsRead {
-			unreadCount++
-		}
-		notifications = append(notifications, n)
-	}
-	notifRows.Close()
-
 	var editItem *Product
 	editID := r.URL.Query().Get("edit")
 	if editID != "" {
@@ -507,8 +455,6 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 		"User":            u,
 		"Products":        products,
 		"Logs":            logs,
-		"Notifications":   notifications, // Pass to HTML
-		"UnreadCount":     unreadCount,   // Pass to HTML
 		"TotalValue":      fmt.Sprintf("%.2f", totalValue),
 		"TotalProfit":     fmt.Sprintf("%.2f", totalProfit),
 		"TotalStockItems": totalStockItems,
@@ -627,7 +573,6 @@ func main() {
 	http.HandleFunc("/audit", checkAuth(adminOnly(auditTrailHandler)))
 	http.HandleFunc("/export-audit", checkAuth(adminOnly(exportAuditHandler)))
 	http.HandleFunc("/audit/delete-all", checkAuth(adminOnly(deleteAllAuditHandler)))
-	http.HandleFunc("/broadcast", checkAuth(adminOnly(broadcastHandler))) // NEW
 	http.HandleFunc("/users", checkAuth(adminOnly(userManagementHandler)))
 	http.HandleFunc("/change-role", checkAuth(adminOnly(changeRoleHandler)))
 	http.HandleFunc("/settings", checkAuth(func(w http.ResponseWriter, r *http.Request) {

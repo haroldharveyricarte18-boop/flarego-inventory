@@ -66,13 +66,14 @@
             padding: 2px 6px;
             border-radius: 10px;
             border: 2px solid white;
+            display: none; /* Hidden by default */
         }
 
         .notif-dropdown {
             position: absolute;
             top: 100%;
             right: 0;
-            width: 300px;
+            width: 320px;
             background: white;
             border-radius: 16px;
             box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
@@ -92,6 +93,7 @@
 
         .notif-item:hover { background: #f8fafc; }
         .notif-item.unread { border-left: 4px solid var(--primary); background: #f5f7ff; }
+        .notif-item .time { font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 4px; }
 
         /* User Section */
         .user-section {
@@ -447,30 +449,21 @@
                 </div>
 
                 <div class="notif-wrapper">
-                    <button class="bell-btn" onclick="toggleNotifDropdown(event)">
-                        🔔 <span id="notifBadge" class="notif-badge">3</span>
+                    <button class="bell-btn" id="notifBtn" onclick="toggleNotifDropdown(event)">
+                        🔔 <span id="notifBadge" class="notif-badge">0</span>
                     </button>
                     <div id="notifDropdown" class="notif-dropdown">
                         <div style="padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                             <strong style="font-size: 0.9rem;">Notifications</strong>
-                            <a href="#" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Mark all as read</a>
+                            <a href="javascript:void(0)" onclick="clearNotifications()" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Clear all</a>
                         </div>
                         <div id="notifList">
-                            <div class="notif-item unread">
-                                <div style="font-weight: 700; font-size: 0.85rem;">System Update</div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);">New stock intake scheduled for Monday.</div>
-                                <small style="font-size: 0.65rem; color: #94a3b8;">10 mins ago</small>
-                            </div>
-                            <div class="notif-item">
-                                <div style="font-weight: 700; font-size: 0.85rem;">Price Change</div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);">RJ45 prices updated by Admin.</div>
-                                <small style="font-size: 0.65rem; color: #94a3b8;">2 hours ago</small>
-                            </div>
+                            <div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="user-section" onclick="toggleProfileDropdown(event)">
+                <div class="user-section" id="userBtn" onclick="toggleProfileDropdown(event)">
                     <div class="user-meta">
                         <span class="name">{{.User.DisplayName}}</span>
                         <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
@@ -494,13 +487,16 @@
         </div>
 
         {{ if eq .User.Role "admin" }}
-        <div class="card" style="margin-bottom: 30px; border-left: 5px solid var(--primary);">
-            <div style="padding: 20px;">
-                <h3 style="margin-top:0; font-size: 1rem;">📢 Broadcast System Update</h3>
-                <div style="display: flex; gap: 10px;">
+        <div class="card" style="margin-bottom: 30px; border-left: 5px solid var(--primary); background: #fcfdfe;">
+            <div style="padding: 24px;">
+                <h3 style="margin-top:0; font-size: 1.1rem; color: var(--dark); display: flex; align-items: center; gap: 8px;">
+                    🛠️ Admin Settings: Broadcast System Update
+                </h3>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 15px;">Send a real-time notification to all logged-in staff members.</p>
+                <div style="display: flex; gap: 12px;">
                     <input type="text" id="broadcastTitle" placeholder="Update Title (e.g. Schedule Change)" style="flex: 1;">
                     <input type="text" id="broadcastMsg" placeholder="Message to all staff..." style="flex: 2;">
-                    <button onclick="sendBroadcast()" class="btn btn-primary">Post Update</button>
+                    <button id="broadcastBtn" onclick="sendBroadcast()" class="btn btn-primary" style="white-space: nowrap;">Post Update</button>
                 </div>
             </div>
         </div>
@@ -629,6 +625,7 @@
         const itemsPerPage = 8;
         let filteredProducts = [];
         let sortState = { column: null, direction: 'asc' };
+        let unreadCount = 0;
 
         const allProducts = [
             {{range .Products}}
@@ -689,26 +686,115 @@
             document.getElementById('jumpPageInput').max = totalPages;
         }
 
-        // Notification UI Handlers
+        // --- Notification UI Handlers ---
         function toggleNotifDropdown(e) {
             e.stopPropagation();
             const d = document.getElementById('notifDropdown');
             const p = document.getElementById('profileDropdown');
             if(p) p.style.display = 'none';
             d.style.display = d.style.display === 'block' ? 'none' : 'block';
-        }
-
-        function sendBroadcast() {
-            const title = document.getElementById('broadcastTitle').value;
-            const msg = document.getElementById('broadcastMsg').value;
-            if(!title || !msg) return alert("Please fill in both fields");
             
-            // Logic to send to backend would go here
-            alert("Broadcast sent to all staff members!");
-            document.getElementById('broadcastTitle').value = '';
-            document.getElementById('broadcastMsg').value = '';
+            // Reset badge on open
+            if(d.style.display === 'block') {
+                unreadCount = 0;
+                updateBadge();
+            }
         }
 
+        function toggleProfileDropdown(e) {
+            e.stopPropagation();
+            const d = document.getElementById('profileDropdown');
+            const n = document.getElementById('notifDropdown');
+            if(n) n.style.display = 'none';
+            d.style.display = d.style.display === 'block' ? 'none' : 'block';
+        }
+
+        // Close dropdowns on click outside
+        window.onclick = function(event) {
+            if (!event.target.closest('.notif-wrapper') && !event.target.closest('.user-section')) {
+                document.getElementById('notifDropdown').style.display = 'none';
+                document.getElementById('profileDropdown').style.display = 'none';
+            }
+        }
+
+        function addNotification(title, message) {
+            const list = document.getElementById('notifList');
+            const empty = document.getElementById('notifEmptyState');
+            if(empty) empty.remove();
+
+            const item = document.createElement('div');
+            item.className = 'notif-item unread';
+            item.innerHTML = `
+                <strong style="font-size: 0.85rem; display: block;">${title}</strong>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
+                <span class="time">Just now</span>
+            `;
+            list.prepend(item);
+            
+            unreadCount++;
+            updateBadge();
+        }
+
+        function updateBadge() {
+            const badge = document.getElementById('notifBadge');
+            badge.innerText = unreadCount;
+            badge.style.display = unreadCount > 0 ? 'block' : 'none';
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifList').innerHTML = `<div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>`;
+            unreadCount = 0;
+            updateBadge();
+        }
+
+        // --- REAL-TIME LISTENER ---
+        const evtSource = new EventSource("/events");
+        evtSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            addNotification(data.title, data.message);
+        };
+
+        // --- BROADCAST LOGIC ---
+        async function sendBroadcast() {
+            const titleInput = document.getElementById('broadcastTitle');
+            const msgInput = document.getElementById('broadcastMsg');
+            const btn = document.getElementById('broadcastBtn');
+            
+            const title = titleInput.value;
+            const message = msgInput.value;
+
+            if(!title || !message) return alert("Please fill in both fields");
+
+            btn.disabled = true;
+            btn.innerText = "Broadcasting...";
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('message', message);
+
+            try {
+                const response = await fetch('/api/send-notification', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    titleInput.value = '';
+                    msgInput.value = '';
+                    alert("Broadcast sent successfully!");
+                } else {
+                    const errText = await response.text();
+                    alert("Failed: " + errText);
+                }
+            } catch (err) {
+                alert("Connection error.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Post Update";
+            }
+        }
+
+        // --- Sorting & Pagination ---
         function toggleSort(col) {
             if (sortState.column === col) {
                 sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
@@ -731,7 +817,6 @@
                 let valB = b[col];
                 if (typeof valA === 'string') valA = valA.toLowerCase();
                 if (typeof valB === 'string') valB = valB.toLowerCase();
-                
                 if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
                 if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -756,9 +841,13 @@
         }
 
         function changePage(dir) {
-            currentPage += dir;
-            renderInventory();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const totalPages = Math.ceil(filteredProducts.length / itemsPerPage) || 1;
+            const newPage = currentPage + dir;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                renderInventory();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         }
 
         document.getElementById('posSearch').addEventListener('input', function(e) {
@@ -775,41 +864,22 @@
             if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
         }
 
-        function toggleProfileDropdown(e) {
-            e.stopPropagation();
-            const d = document.getElementById('profileDropdown');
-            const n = document.getElementById('notifDropdown');
-            if(n) n.style.display = 'none';
-            d.style.display = d.style.display === 'block' ? 'none' : 'block';
-        }
+        // Initial render
+        renderInventory();
 
-        window.onclick = function() {
-            const profile = document.getElementById('profileDropdown');
-            const notif = document.getElementById('notifDropdown');
-            if (profile) profile.style.display = 'none';
-            if (notif) notif.style.display = 'none';
-        }
-
-        const healthScore = Number("{{.HealthScore}}") || 0;
-        let chartColor = '#6366f1';
-        if (healthScore < 30) chartColor = '#ef4444';
-        else if (healthScore < 70) chartColor = '#f59e0b';
-
+        // Chart Init
         const ctx = document.getElementById('healthChart').getContext('2d');
         new Chart(ctx, {
             type: 'doughnut',
             data: {
                 datasets: [{
-                    data: [healthScore, 100 - healthScore],
-                    backgroundColor: [chartColor, '#f1f5f9'],
-                    borderWidth: 0,
-                    borderRadius: 4
+                    data: [{{.HealthScore}}, 100 - {{.HealthScore}}],
+                    backgroundColor: ['#6366f1', '#e2e8f0'],
+                    borderWidth: 0
                 }]
             },
-            options: { cutout: '75%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+            options: { cutout: '75%', plugins: { tooltip: { enabled: false } } }
         });
-
-        renderInventory();
     </script>
 </body>
 </html>

@@ -189,19 +189,28 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 
 // --- HANDLERS ---
 
+// handleSendNotification manages the broadcast from the admin dashboard
 func handleSendNotification(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request", 405)
 		return
 	}
+
 	title := r.FormValue("title")
 	msg := r.FormValue("message")
 
-	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
-	if err != nil {
-		http.Error(w, "Failed to save", 500)
+	if title == "" || msg == "" {
+		http.Error(w, "Title and Message are required", http.StatusBadRequest)
 		return
 	}
+
+	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
+	if err != nil {
+		http.Error(w, "Failed to save broadcast", 500)
+		return
+	}
+
+	logActivity(r, "Broadcast", "System Update", "Admin sent a message to all staff")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -218,6 +227,10 @@ func handleGetNotifications(w http.ResponseWriter, r *http.Request) {
 		var n Notification
 		rows.Scan(&n.ID, &n.Title, &n.Message, &n.CreatedAt)
 		notifs = append(notifs, n)
+	}
+
+	if notifs == nil {
+		notifs = []Notification{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

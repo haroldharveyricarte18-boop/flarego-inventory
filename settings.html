@@ -49,7 +49,7 @@
         .avatar-preview {
             width: 110px;
             height: 110px;
-            border-radius: 35px; /* Modern squircle */
+            border-radius: 35px;
             object-fit: cover;
             border: 4px solid var(--white);
             box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
@@ -87,7 +87,6 @@
             box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
 
-        /* Modern file input */
         .file-input-wrapper {
             position: relative;
             margin-top: 8px;
@@ -205,25 +204,22 @@
 </div>
 
 <script>
-    // Live preview logic
     const fileInput = document.getElementById('fileInput');
     const preview = document.getElementById('preview');
 
     fileInput.onchange = evt => {
         const [file] = fileInput.files;
         if (file) {
-            // Validate size
             if (file.size > 5 * 1024 * 1024) {
                 alert("File too large. Please select an image under 5MB.");
                 fileInput.value = "";
                 return;
             }
             
-            // Create preview URL
+            
             const url = URL.createObjectURL(file);
             preview.src = url;
             
-            // Clean up memory after image loads
             preview.onload = () => {
                 URL.revokeObjectURL(url);
             }

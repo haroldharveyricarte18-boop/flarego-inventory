@@ -20,8 +20,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// --- MODELS ---
-
 type User struct {
 	ID              int
 	Username        string
@@ -58,8 +56,6 @@ type Notification struct {
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
 }
-
-// --- WEBSOCKET REAL-TIME HUB ---
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -100,8 +96,6 @@ func (p Product) GetNumericStock() int {
 
 var db *sql.DB
 
-// --- DATABASE LOGIC ---
-
 func initDB() {
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
@@ -114,7 +108,6 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// Ping to ensure connection is live
 	if err = db.Ping(); err != nil {
 		log.Fatal("Could not connect to database:", err)
 	}
@@ -160,18 +153,14 @@ func initDB() {
 		log.Fatal("Database init error:", err)
 	}
 
-	// Explicit Migrations for existing tables
 	db.Exec("ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(10,2) DEFAULT 0.00;")
 	db.Exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'staff';")
 	db.Exec("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS user_name TEXT;")
 
-	// Default Admin (Plain text for now as per your original, but consider bcrypt later)
 	db.Exec(`INSERT INTO users (username, password, display_name, role) 
              VALUES ('admin', 'admin123', 'System Admin', 'admin') 
              ON CONFLICT (username) DO UPDATE SET role = 'admin'`)
 }
-
-// --- UTILITIES ---
 
 func parsePrice(priceStr string) float64 {
 	replacer := strings.NewReplacer("$", "", "₱", "", "PHP", "", ",", "", " ", "")
@@ -200,8 +189,6 @@ func countSalesToday() int {
 
 func sub(a, b int) int { return a - b }
 
-// --- MIDDLEWARE ---
-
 func checkAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session_token")
@@ -229,8 +216,6 @@ func adminOnly(next http.HandlerFunc) http.HandlerFunc {
 		next.ServeHTTP(w, r)
 	}
 }
-
-// --- HANDLERS ---
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, _ := r.Cookie("session_token")
@@ -605,8 +590,6 @@ func exportHandler(w http.ResponseWriter, r *http.Request) {
 	logActivity(r, "Export", "Inventory CSV", "Admin exported the product list")
 }
 
-// --- BROADCAST LOGIC ---
-
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl, _ := template.ParseFiles("broadcast.html")
 	tmpl.Execute(w, nil)
@@ -640,7 +623,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	hub.clients[conn] = true
 	hub.mutex.Unlock()
 
-	// Keep-alive/Read loop to detect disconnects
 	go func() {
 		defer func() {
 			hub.mutex.Lock()
@@ -680,7 +662,6 @@ func main() {
 
 	go hub.run()
 
-	// Routes
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/forgot", forgotPasswordHandler)

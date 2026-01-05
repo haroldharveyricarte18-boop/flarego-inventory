@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reset Password | Flarego ERP</title>
+    <title>Reset Password | Flarego Inv.</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -53,7 +53,6 @@
             font-size: 0.75rem; font-weight: 800; user-select: none;
         }
 
-        /* Strength Meter Styles */
         .strength-container { margin-top: 8px; margin-bottom: 16px; }
         .strength-bar {
             height: 6px; width: 100%; background: #f1f5f9;
@@ -127,7 +126,6 @@
     </div>
 
     <script>
-        // Error handling
         if (new URLSearchParams(window.location.search).get('error') === 'invalid') {
             document.getElementById('error').style.display = 'block';
         }
@@ -158,7 +156,6 @@
                 }
             });
 
-            // Update Progress Bar
             const percentage = (passedCount / 4) * 100;
             progress.style.width = percentage + '%';
 
@@ -166,7 +163,6 @@
             else if (passedCount <= 3) progress.style.backgroundColor = 'var(--warning)';
             else progress.style.backgroundColor = 'var(--success)';
 
-            // Enable/Disable Button
             submitBtn.disabled = passedCount < 4;
         });
 

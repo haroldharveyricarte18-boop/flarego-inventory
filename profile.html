@@ -83,7 +83,6 @@
 
         input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
 
-        /* Profile Image Section */
         .avatar-section {
             text-align: center;
             margin-bottom: 32px;
@@ -173,7 +172,6 @@
         function updatePreview(url) {
             const preview = document.getElementById('preview');
             if (url.trim() === "") {
-                // If empty, revert to UI Avatar
                 preview.src = "https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff&bold=true";
             } else {
                 preview.src = url;

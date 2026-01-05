@@ -31,7 +31,6 @@
 
         .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 
-        /* Notification Styles */
         .notif-wrapper {
             position: relative;
             display: flex;
@@ -97,7 +96,6 @@
         .notif-item .message { font-size: 0.8rem; color: var(--text-muted); display: block; }
         .notif-item .time { font-size: 0.7rem; color: var(--text-muted); display: block; margin-top: 6px; }
 
-        /* User Section */
         .user-section {
             display: flex;
             align-items: center;
@@ -489,6 +487,7 @@
                         <a href="javascript:void(0)" onclick="toggleBroadcast()" style="background: #f5f7ff; color: var(--primary);">📢 Broadcast System</a>
                         <a href="/users" target="_blank">👥 User Management</a>
                         <a href="/audit" target="_blank">📜 Audit Trail</a>
+                        <a href="/vault" target="_blank">💵Vault</a>
                         {{ end }}
                         <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
                         <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
@@ -697,7 +696,6 @@
             document.getElementById('jumpPageInput').max = totalPages;
         }
 
-        // --- Core Functions ---
         function toggleForm() {
             const f = document.getElementById('form-content');
             f.style.display = f.style.display === 'none' ? 'block' : 'none';
@@ -719,7 +717,6 @@
             }
         }
 
-        // --- Search and Sort ---
         document.getElementById('posSearch').addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
             filteredProducts = allProducts.filter(p => p.name.toLowerCase().includes(term) || p.desc.toLowerCase().includes(term));
@@ -751,7 +748,6 @@
             renderInventory();
         }
 
-        // --- WebSocket & Real-Time Notifications ---
         const socket = new WebSocket("ws://" + window.location.host + "/ws");
 
         socket.onmessage = function(event) {
@@ -783,7 +779,6 @@
             list.prepend(div);
         }
 
-        // Fetch past notifications on load
         async function fetchNotifications() {
             try {
                 const response = await fetch('/notifications');
@@ -828,7 +823,6 @@
             updateBadge();
         }
 
-        // --- Dropdown UI Handlers ---
         function toggleNotifDropdown(e) {
             e.stopPropagation();
             const d = document.getElementById('notifDropdown');
@@ -839,7 +833,6 @@
             if(d.style.display === 'block') {
                 unreadCount = 0;
                 updateBadge();
-                // Mark items as read visually
                 document.querySelectorAll('.notif-item.unread').forEach(el => el.classList.remove('unread'));
             }
         }
@@ -875,12 +868,10 @@
             badge.style.display = unreadCount > 0 ? 'block' : 'none';
         }
 
-        // Initialize
         window.onload = function() {
             renderInventory();
             fetchNotifications();
             
-            // Stats Chart logic
             const ctx = document.getElementById('healthChart').getContext('2d');
             new Chart(ctx, {
                 type: 'doughnut',

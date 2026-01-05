@@ -277,7 +277,6 @@
             return confirm("CRITICAL: You are about to wipe the entire system audit trail. This cannot be undone. Proceed?");
         }
 
-        // Real-time frontend filtering
         document.getElementById('auditSearch').addEventListener('input', function(e) {
             const term = e.target.value.toLowerCase();
             const rows = document.querySelectorAll('.audit-row');
@@ -288,7 +287,6 @@
             });
         });
 
-        // Dynamic Export URL
         document.getElementById('exportBtn').addEventListener('click', function() {
             const start = document.getElementById('startDate').value;
             const end = document.getElementById('endDate').value;

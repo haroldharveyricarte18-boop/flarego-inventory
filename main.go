@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket" // Added for real-time broadcast
 	_ "github.com/lib/pq"
 )
 
@@ -63,6 +64,45 @@ func (p Product) GetNumericStock() int {
 }
 
 var db *sql.DB
+
+// --- WEBSOCKET REAL-TIME HUB ---
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+// clients keeps track of all connected users
+var clients = make(map[*websocket.Conn]bool)
+
+// broadcast is a channel that waits for new notifications to send out
+var broadcast = make(chan Notification)
+
+// handleMessages runs in the background and pushes data to all browsers
+func handleMessages() {
+	for {
+		msg := <-broadcast
+		for client := range clients {
+			err := client.WriteJSON(msg)
+			if err != nil {
+				log.Printf("WebSocket error: %v", err)
+				client.Close()
+				delete(clients, client)
+			}
+		}
+	}
+}
+
+// wsHandler upgrades the connection to a live WebSocket
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	clients[conn] = true
+}
 
 // --- DATABASE LOGIC ---
 
@@ -602,11 +642,15 @@ func handleSendNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Save to database
 	_, err := db.Exec("INSERT INTO notifications (title, message) VALUES ($1, $2)", title, msg)
 	if err != nil {
 		http.Error(w, "Failed to save broadcast", 500)
 		return
 	}
+
+	// 2. SEND LIVE UPDATE VIA WEBSOCKET
+	broadcast <- Notification{Title: title, Message: msg}
 
 	logActivity(r, "Broadcast", "System Update", "Admin sent a message to all staff")
 	w.WriteHeader(http.StatusOK)
@@ -639,6 +683,9 @@ func main() {
 	initDB()
 	defer db.Close()
 
+	// 1. START THE LIVE MESSAGE ENGINE
+	go handleMessages()
+
 	// Public Routes
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/register", registerHandler)
@@ -651,6 +698,8 @@ func main() {
 	http.HandleFunc("/sell", checkAuth(sellHandler))
 	http.HandleFunc("/update-profile", checkAuth(updateProfileHandler))
 	http.HandleFunc("/api/get-notifications", checkAuth(handleGetNotifications))
+	http.HandleFunc("/ws/notifications", wsHandler) // <--- LIVE CONNECTION ROUTE
+
 	http.HandleFunc("/settings", checkAuth(func(w http.ResponseWriter, r *http.Request) {
 		cookie, _ := r.Cookie("session_token")
 		var u User

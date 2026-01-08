@@ -757,48 +757,48 @@
         }
 
         function postBroadcast() {
-            const title = document.getElementById('bcTitle').value;
-            const message = document.getElementById('bcMessage').value;
+    const title = document.getElementById('bcTitle').value;
+    const message = document.getElementById('bcMessage').value;
 
-            if(!title || !message) {
-                alert("Please fill in both title and message.");
-                return;
-            }
+    if(!title || !message) {
+        alert("Please fill in both title and message.");
+        return;
+    }
 
-            fetch('/api/send-notification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}`
-            })
-            .then(res => {
-                if(res.ok) {
-                    alert("Broadcast Sent!");
-                    document.getElementById('bcTitle').value = '';
-                    document.getElementById('bcMessage').value = '';
-                    document.getElementById('broadcast-panel').style.display = 'none';
-                } else {
-                    alert("Error sending broadcast.");
-                }
-            });
+    fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}`
+    })
+    .then(res => {
+        if(res.ok) {
+            // Clear inputs and hide panel after successful send
+            document.getElementById('bcTitle').value = '';
+            document.getElementById('bcMessage').value = '';
+            document.getElementById('broadcast-panel').style.display = 'none';
+        } else {
+            alert("Failed to send broadcast. Check server connection.");
         }
-
+    });
+}
         function addNotification(title, message) {
-            const list = document.getElementById('notifList');
-            const empty = document.getElementById('notifEmptyState');
-            if(empty) empty.remove();
+    const list = document.getElementById('notifList');
+    const empty = document.getElementById('notifEmptyState');
+    
+    // Remove the "No new notifications" text if it exists
+    if(empty) empty.style.display = 'none';
 
-            const item = document.createElement('div');
-            item.className = 'notif-item unread';
-            item.innerHTML = `
-                <strong style="font-size: 0.85rem; display: block;">${title}</strong>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
-                <span class="time">Just now</span>
-            `;
-            list.prepend(item);
-            
-            unreadCount++;
-            updateBadge();
-        }
+    const item = document.createElement('div');
+    item.className = 'notif-item unread';
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    item.innerHTML = `
+        <strong style="font-size: 0.85rem; display: block;">${title}</strong>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">${message}</span>
+        <span class="time">${now}</span>
+    `;
+    list.prepend(item); // Adds newest update to the top
+}
 
         function updateBadge() {
             const badge = document.getElementById('notifBadge');
@@ -898,13 +898,26 @@
         // Initial render
         renderInventory();
 
-        // WebSocket for real-time notifications
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
-        socket.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            addNotification(data.title, data.message);
-        };
+        // This connects to your server's broadcast stream
+const socket = new WebSocket('ws://' + window.location.host + '/ws/notifications');
+
+socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    
+    // 1. Run the builder we fixed in Step 1
+    addNotification(data.title, data.message);
+    
+    // 2. Increment the red badge count
+    unreadCount++;
+    updateBadge();
+};
+
+function updateBadge() {
+    const badge = document.getElementById('notifBadge');
+    badge.innerText = unreadCount;
+    // Show badge only if there are unread items
+    badge.style.display = unreadCount > 0 ? 'block' : 'none';
+}
     </script>
 </body>
 </html>

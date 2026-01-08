@@ -248,6 +248,51 @@
             font-size: 0.9rem;
         }
 
+        /* New Tools Dropdown Styles */
+.tools-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.tools-content {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background-color: white;
+    min-width: 180px;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    z-index: 100;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.tools-content a, .tools-content button {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: var(--text-main);
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: block;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.tools-content a:hover, .tools-content button:hover {
+    background: #f8fafc;
+    color: var(--primary);
+}
+
+.tools-dropdown:hover .tools-content {
+    display: block;
+}
+
         .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39); }
         .btn-primary:hover { background: var(--primary-hover); transform: translateY(-2px); }
 
@@ -449,13 +494,21 @@
                 <h1 class="brand-text">Flare<span>go</span></h1>
             </div>
 
-            <div style="display: flex; gap: 24px; align-items: center;">
-                <div style="display: flex; gap: 12px;">
-                    {{ if eq .User.Role "admin" }}
-                    <a href="/export" class="btn btn-outline">📥 Export CSV</a>
-                    <button onclick="toggleForm()" class="btn btn-primary">➕ New Product</button>
-                    {{ end }}
-                </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+    <a href="/" class="btn btn-outline" style="border:none; background:transparent;">Items</a>
+
+    {{ if eq .User.Role "admin" }}
+    <div class="tools-dropdown">
+        <button class="btn btn-outline">Tools ▾</button>
+        <div class="tools-content">
+            <button onclick="toggleForm()">➕ New Product</button>
+            <a href="/export">📥 Export CSV</a>
+            <a href="/audit">📜 Audit Trail</a>
+            <a href="/users">👥 User Management</a>
+        </div>
+    </div>
+    {{ end }}
+</div>
 
                 <div class="notif-wrapper">
                     <button class="bell-btn" id="notifBtn" onclick="toggleNotifDropdown(event)">

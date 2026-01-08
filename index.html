@@ -515,11 +515,33 @@
     </style>
 </head>
 <body>
+   <body>
+    <div class="nav-overlay" id="navOverlay" onclick="toggleSidebar()"></div>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2 style="font-size: 1.2rem; margin:0; color:var(--dark);">Flarego <span>Tools</span></h2>
+            <button onclick="toggleSidebar()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+        </div>
+        <nav>
+            <a href="/" class="menu-item">📊 Dashboard</a>
+            {{ if eq .User.Role "admin" }}
+                <a href="javascript:void(0)" onclick="toggleForm(); toggleSidebar()" class="menu-item">➕ New Product</a>
+                <a href="/export" class="menu-item">📥 Export CSV</a>
+                <a href="javascript:void(0)" onclick="toggleBroadcast(); toggleSidebar()" class="menu-item">📢 Broadcast System</a>
+                <a href="/users" class="menu-item">👥 User Management</a>
+                <a href="/audit" class="menu-item">📜 Audit Trail</a>
+            {{ end }}
+            <a href="/settings" class="menu-item">⚙️ Profile Settings</a>
+            <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;">
+            <a href="/logout" class="menu-item" style="color: var(--danger);">🚪 Logout</a>
+        </nav>
+    </aside>
+
     <div class="container">
         
         {{$lowStockItems := ""}}
         {{range .Products}}{{if le .NumericStock 5}}{{$lowStockItems = print $lowStockItems .Name ", "}}{{end}}{{end}}
-        
         {{if ne $lowStockItems ""}}
         <div class="alert-banner">
             <span>⚠️</span>
@@ -527,73 +549,20 @@
         </div>
         {{end}}
 
-        <div class="nav-overlay" id="navOverlay" onclick="toggleSidebar()"></div>
-<aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <h2 style="font-size: 1.2rem; margin:0; color:var(--dark);">Flarego <span>Tools</span></h2>
-        <button onclick="toggleSidebar()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
-    </div>
-    <nav>
-        <a href="/" class="menu-item">📊 Dashboard</a>
-        {{ if eq .User.Role "admin" }}
-            <a href="javascript:void(0)" onclick="toggleForm(); toggleSidebar()" class="menu-item">➕ New Product</a>
-            <a href="/export" class="menu-item">📥 Export CSV</a>
-            <a href="javascript:void(0)" onclick="toggleBroadcast(); toggleSidebar()" class="menu-item">📢 Broadcast System</a>
-            <a href="/users" class="menu-item">👥 User Management</a>
-            <a href="/audit" class="menu-item">📜 Audit Trail</a>
-        {{ end }}
-        <a href="/settings" class="menu-item">⚙️ Profile Settings</a>
-        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;">
-        <a href="/logout" class="menu-item" style="color: var(--danger);">🚪 Logout</a>
-    </nav>
-</aside>
-
-<div class="top-bar">
-    <div class="brand">
-        <button class="hamburger-btn" onclick="toggleSidebar()">
-            <span></span><span></span><span></span>
-        </button>
-        <div class="logo-container">
-            <svg width="32" height="32" viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M95.5 10C95.5 10 50 60 50 145C50 215 95 255 110 255C125 255 170 215 170 145C170 75 120 10 120 10C120 10 150 50 150 125C150 185 115 220 115 220C115 220 80 185 80 125C80 65 110 10 110 10" fill="white"/>
-            </svg>
-        </div>
-        <h1 class="brand-text">Flare<span>go</span></h1>
-    </div>
-
-    <div style="display: flex; gap: 24px; align-items: center;">
-        <div class="notif-wrapper">
-            <button class="bell-btn" id="notifBtn" onclick="toggleNotifDropdown(event)">
-                🔔 <span id="notifBadge" class="notif-badge">0</span>
-            </button>
-            <div id="notifDropdown" class="notif-dropdown">
-                <div style="padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                    <strong style="font-size: 0.9rem;">Notifications</strong>
-                    <a href="javascript:void(0)" onclick="clearNotifications()" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Clear all</a>
+        <div class="top-bar">
+            <div class="brand">
+                <button class="hamburger-btn" onclick="toggleSidebar()">
+                    <span></span><span></span><span></span>
+                </button>
+                <div class="logo-container">
+                    <svg width="32" height="32" viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M95.5 10C95.5 10 50 60 50 145C50 215 95 255 110 255C125 255 170 215 170 145C170 75 120 10 120 10C120 10 150 50 150 125C150 185 115 220 115 220C115 220 80 185 80 125C80 65 110 10 110 10" fill="white"/>
+                    </svg>
                 </div>
-                <div id="notifList">
-                    <div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>
-                </div>
+                <h1 class="brand-text">Flare<span>go</span></h1>
             </div>
-        </div>
 
-        <div class="user-section" id="userBtn" onclick="toggleProfileDropdown(event)">
-            <div class="user-meta">
-                <span class="name">{{.User.DisplayName}}</span>
-                <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
-            </div>
-            <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
-                 class="avatar" 
-                 alt="Profile">
-            
-            <div id="profileDropdown" class="profile-dropdown">
-                <a href="/settings">⚙️ Profile Settings</a>
-                <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
-            </div>
-        </div>
-    </div>
-</div>
-
+            <div style="display: flex; gap: 24px; align-items: center;">
                 <div class="notif-wrapper">
                     <button class="bell-btn" id="notifBtn" onclick="toggleNotifDropdown(event)">
                         🔔 <span id="notifBadge" class="notif-badge">0</span>
@@ -615,18 +584,10 @@
                         <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
                     </div>
                     <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
-                         class="avatar" 
-                         alt="Profile"  
-                         onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
+                         class="avatar" alt="Profile">
                     
                     <div id="profileDropdown" class="profile-dropdown">
                         <a href="/settings">⚙️ Profile Settings</a>
-                        {{ if eq .User.Role "admin" }}
-                        <a href="javascript:void(0)" onclick="toggleBroadcast()" style="background: #f5f7ff; color: var(--primary);">📢 Broadcast System</a>
-                        <a href="/users">👥 User Management</a>
-                        <a href="/audit">📜 Audit Trail</a>
-                        {{ end }}
-                        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 0;">
                         <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
                     </div>
                 </div>
@@ -659,113 +620,20 @@
         </div>
 
         <div class="main-layout">
-            <div class="card">
-                {{ if eq .User.Role "admin" }}
-                <div id="form-content" class="form-section" style="display: {{if .IsEditing}}block{{else}}none{{end}};">
-                    <h3 style="margin-top:0">{{if .EditItem}}Edit Product: {{.EditItem.Name}}{{else}}Add New Product{{end}}</h3>
-                    <form action="/add" method="POST">
-                        <input type="hidden" name="id" value="{{if .EditItem}}{{.EditItem.ID}}{{end}}">
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 15px;">
-                            <div class="input-group">
-                                <label>Product Name</label>
-                                <input type="text" name="name" value="{{if .EditItem}}{{.EditItem.Name}}{{end}}" required>
-                            </div>
-                            <div class="input-group">
-                                <label>Price (Sell) ₱</label>
-                                <input type="number" step="0.01" name="price" value="{{if .EditItem}}{{.EditItem.Price}}{{end}}" required>
-                            </div>
-                            <div class="input-group">
-                                <label>Cost (Buy) ₱</label>
-                                <input type="number" step="0.01" name="cost_price" value="{{if .EditItem}}{{.EditItem.CostPrice}}{{end}}" required>
-                            </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 3fr; gap: 15px; margin-top: 15px;">
-                            <div class="input-group">
-                                <label>Stock</label>
-                                <input type="number" name="stock" value="{{if .EditItem}}{{.EditItem.Stock}}{{end}}" required>
-                            </div>
-                            <div class="input-group">
-                                <label>Description</label>
-                                <input type="text" name="desc" value="{{if .EditItem}}{{.EditItem.Desc}}{{end}}" required>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px; margin-top: 20px;">
-                            <button type="submit" class="btn btn-primary">{{if .EditItem}}Update Product{{else}}Save Product{{end}}</button>
-                            <a href="/" class="btn btn-outline">Cancel</a>
-                        </div>
-                    </form>
-                </div>
-
-                <div id="broadcast-panel" class="broadcast-section" style="display: none;">
-                    <h3 style="margin-top:0; color: var(--primary);">🛠️ Admin Settings: Broadcast System Update</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px;">Send a real-time notification to all logged-in staff members.</p>
-                    <div style="display: grid; grid-template-columns: 1fr 2fr 150px; gap: 15px; align-items: end;">
-                        <div class="input-group">
-                            <label>Update Title</label>
-                            <input type="text" id="bcTitle" placeholder="e.g. Schedule Change">
-                        </div>
-                        <div class="input-group">
-                            <label>Message to all staff...</label>
-                            <input type="text" id="bcMessage" placeholder="Type your announcement here...">
-                        </div>
-                        <button onclick="postBroadcast()" class="btn btn-primary" style="width: 100%;">Post Update</button>
-                    </div>
-                </div>
-                {{ end }}
-
-                <div class="inventory-header">
-                    <h3 style="margin:0">Live Inventory</h3>
-                    <input type="text" id="posSearch" placeholder="Search products..." style="width: 250px;">
-                </div>
-
-                <div class="sorting-row">
-                    <div class="sort-btn" onclick="toggleSort('name')">Product Name <span id="sort-name">↕</span></div>
-                    <div class="sort-btn" onclick="toggleSort('stock')">Stock <span id="sort-stock">↕</span></div>
-                    <div class="sort-btn" onclick="toggleSort('price')">Price <span id="sort-price">↕</span></div>
-                    <div style="text-align: right;">Actions</div>
-                </div>
-
-                <div id="inventory-list"></div>
-
-                <div class="pagination-footer">
-                    <div>
-                        <button class="btn-pagination" id="prevBtn" onclick="changePage(-1)">← Previous</button>
-                        <span id="pageIndicator" style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin: 0 10px;">Page 1 of 1</span>
-                        <button class="btn-pagination" id="nextBtn" onclick="changePage(1)">Next →</button>
-                    </div>
-                    
-                    <div class="jump-container">
-                        Jump to Page: 
-                        <input type="number" id="jumpPageInput" class="jump-input" min="1" onkeypress="handleJump(event)">
-                    </div>
-                </div>
             </div>
-
-            <div class="card" style="display: flex; flex-direction: column;">
-                <div style="padding: 24px 24px 12px 24px;">
-                    <h3 style="margin-top: 0; font-size: 1rem;">Recent Activity</h3>
-                </div>
-                <div style="padding: 0 24px; flex-grow: 1;">
-                    {{range .Logs}}
-                    <div style="padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem;">
-                        <div style="font-weight: 700; color: {{if eq .Action "Sale"}}var(--success){{else}}var(--primary){{end}}; font-size: 0.7rem; text-transform: uppercase;">{{.Action}}</div>
-                        <div style="font-weight: 600;">{{.ProductName}}</div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">{{.CreatedAt.Format "Jan 02, 15:04"}}</div>
-                    </div>
-                    {{else}}
-                    <p style="font-size: 0.8rem; color: var(--text-muted);">No recent logs.</p>
-                    {{end}}
-                </div>
-                {{ if eq .User.Role "admin" }}
-                <a href="/audit" class="btn-view-all">VIEW ALL HISTORY →</a>
-                {{ end }}
-            </div>
-        </div>
-
-        <p style="text-align:center; font-size: 0.8rem; color: var(--text-muted); margin-top: 40px;">
-            <b>Flarego ERP v3.0</b> • POS Enabled • Role-Based Access
-        </p>
     </div>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('navOverlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+
+        // Keep your existing renderInventory and other functions here...
+    </script>
+</body>
 
     <script>
         let currentPage = 1;

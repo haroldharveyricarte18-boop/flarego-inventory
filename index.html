@@ -248,51 +248,6 @@
             font-size: 0.9rem;
         }
 
-        /* New Tools Dropdown Styles */
-.tools-dropdown {
-    position: relative;
-    display: inline-block;
-}
-
-.tools-content {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background-color: white;
-    min-width: 180px;
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    z-index: 100;
-    margin-top: 10px;
-    overflow: hidden;
-}
-
-.tools-content a, .tools-content button {
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    padding: 12px 16px;
-    text-decoration: none;
-    color: var(--text-main);
-    font-size: 0.85rem;
-    font-weight: 600;
-    display: block;
-    cursor: pointer;
-    font-family: inherit;
-}
-
-.tools-content a:hover, .tools-content button:hover {
-    background: #f8fafc;
-    color: var(--primary);
-}
-
-.tools-dropdown:hover .tools-content {
-    display: block;
-}
-
         .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39); }
         .btn-primary:hover { background: var(--primary-hover); transform: translateY(-2px); }
 
@@ -469,6 +424,94 @@
             opacity: 0.4;
             cursor: not-allowed;
         }
+
+        /* Sidebar Styling */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: -280px; /* Hidden by default */
+    width: 280px;
+    height: 100%;
+    background: white;
+    box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+    z-index: 1001;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* When the sidebar is toggled open */
+.sidebar.active {
+    left: 0;
+}
+
+/* Overlay to dim the background */
+.nav-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(2px);
+    display: none;
+    z-index: 1000;
+}
+
+.nav-overlay.active {
+    display: block;
+}
+
+/* Hamburger Button Icon */
+.hamburger-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    margin-right: 15px;
+}
+
+.hamburger-btn span {
+    display: block;
+    width: 24px;
+    height: 2px;
+    background: var(--dark);
+    border-radius: 2px;
+    transition: 0.3s;
+}
+
+/* Sidebar Menu Items */
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    text-decoration: none;
+    color: #475569;
+    border-radius: 10px;
+    font-weight: 500;
+    transition: 0.2s;
+    margin-bottom: 4px;
+}
+
+.menu-item:hover {
+    background: #f1f5f9;
+    color: var(--primary);
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
     </style>
 </head>
 <body>
@@ -484,30 +527,71 @@
         </div>
         {{end}}
 
-        <div class="top-bar">
-            <div class="brand">
-                <div class="logo-container">
-                    <svg width="32" height="32" viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M95.5 10C95.5 10 50 60 50 145C50 215 95 255 110 255C125 255 170 215 170 145C170 75 120 10 120 10C120 10 150 50 150 125C150 185 115 220 115 220C115 220 80 185 80 125C80 65 110 10 110 10" fill="white"/>
-                    </svg>
+        <div class="nav-overlay" id="navOverlay" onclick="toggleSidebar()"></div>
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h2 style="font-size: 1.2rem; margin:0; color:var(--dark);">Flarego <span>Tools</span></h2>
+        <button onclick="toggleSidebar()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+    </div>
+    <nav>
+        <a href="/" class="menu-item">📊 Dashboard</a>
+        {{ if eq .User.Role "admin" }}
+            <a href="javascript:void(0)" onclick="toggleForm(); toggleSidebar()" class="menu-item">➕ New Product</a>
+            <a href="/export" class="menu-item">📥 Export CSV</a>
+            <a href="javascript:void(0)" onclick="toggleBroadcast(); toggleSidebar()" class="menu-item">📢 Broadcast System</a>
+            <a href="/users" class="menu-item">👥 User Management</a>
+            <a href="/audit" class="menu-item">📜 Audit Trail</a>
+        {{ end }}
+        <a href="/settings" class="menu-item">⚙️ Profile Settings</a>
+        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;">
+        <a href="/logout" class="menu-item" style="color: var(--danger);">🚪 Logout</a>
+    </nav>
+</aside>
+
+<div class="top-bar">
+    <div class="brand">
+        <button class="hamburger-btn" onclick="toggleSidebar()">
+            <span></span><span></span><span></span>
+        </button>
+        <div class="logo-container">
+            <svg width="32" height="32" viewBox="0 0 200 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M95.5 10C95.5 10 50 60 50 145C50 215 95 255 110 255C125 255 170 215 170 145C170 75 120 10 120 10C120 10 150 50 150 125C150 185 115 220 115 220C115 220 80 185 80 125C80 65 110 10 110 10" fill="white"/>
+            </svg>
+        </div>
+        <h1 class="brand-text">Flare<span>go</span></h1>
+    </div>
+
+    <div style="display: flex; gap: 24px; align-items: center;">
+        <div class="notif-wrapper">
+            <button class="bell-btn" id="notifBtn" onclick="toggleNotifDropdown(event)">
+                🔔 <span id="notifBadge" class="notif-badge">0</span>
+            </button>
+            <div id="notifDropdown" class="notif-dropdown">
+                <div style="padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <strong style="font-size: 0.9rem;">Notifications</strong>
+                    <a href="javascript:void(0)" onclick="clearNotifications()" style="font-size: 0.7rem; color: var(--primary); text-decoration: none;">Clear all</a>
                 </div>
-                <h1 class="brand-text">Flare<span>go</span></h1>
+                <div id="notifList">
+                    <div id="notifEmptyState" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">No new notifications</div>
+                </div>
             </div>
+        </div>
 
-            <div style="display: flex; gap: 12px; align-items: center;">
-    <a href="/" class="btn btn-outline" style="border:none; background:transparent;">Items</a>
-
-    {{ if eq .User.Role "admin" }}
-    <div class="tools-dropdown">
-        <button class="btn btn-outline">Tools ▾</button>
-        <div class="tools-content">
-            <button onclick="toggleForm()">➕ New Product</button>
-            <a href="/export">📥 Export CSV</a>
-            <a href="/audit">📜 Audit Trail</a>
-            <a href="/users">👥 User Management</a>
+        <div class="user-section" id="userBtn" onclick="toggleProfileDropdown(event)">
+            <div class="user-meta">
+                <span class="name">{{.User.DisplayName}}</span>
+                <span class="role">{{ if eq .User.Role "admin" }}Administrator{{ else }}Staff Member{{ end }}</span>
+            </div>
+            <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
+                 class="avatar" 
+                 alt="Profile">
+            
+            <div id="profileDropdown" class="profile-dropdown">
+                <a href="/settings">⚙️ Profile Settings</a>
+                <a href="/logout" style="color: var(--danger);">🚪 Logout</a>
+            </div>
         </div>
     </div>
-    {{ end }}
 </div>
 
                 <div class="notif-wrapper">
@@ -532,7 +616,7 @@
                     </div>
                     <img src="{{if .User.ProfilePic}}{{.User.ProfilePic}}{{else}}https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff{{end}}" 
                          class="avatar" 
-                         alt="Profile" 
+                         alt="Profile"  
                          onerror="this.src='https://ui-avatars.com/api/?name={{.User.DisplayName}}&background=6366f1&color=fff'">
                     
                     <div id="profileDropdown" class="profile-dropdown">
@@ -680,7 +764,6 @@
 
         <p style="text-align:center; font-size: 0.8rem; color: var(--text-muted); margin-top: 40px;">
             <b>Flarego ERP v3.0</b> • POS Enabled • Role-Based Access
-            <b>Developed by:</b>Harold Harvey
         </p>
     </div>
 
